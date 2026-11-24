@@ -1,7 +1,9 @@
 package dev.axkit.app.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
@@ -30,6 +32,7 @@ import dev.axkit.app.ui.design.AxType
 import dev.axkit.app.ui.design.CardHeader
 import dev.axkit.app.ui.design.CardList
 import dev.axkit.app.ui.design.CardRow
+import dev.axkit.app.ui.design.Chevron
 import dev.axkit.app.ui.design.Loadable
 import dev.axkit.app.ui.design.LoadableView
 import dev.axkit.app.ui.design.MarkdownText
@@ -84,15 +87,18 @@ private fun BlockView(b: BlocksView.Block, name: String) {
                 // §20: a site the assistant remembers can be forgotten — asked in the chat, where ways.forget_site runs.
                 val sites = name == "ways" && (b.title ?: "") in listOf("사이트", "Sites")
                 CardList(b.rows ?: emptyList()) { r ->
+                    // §34: a row with a message is tapped like an `ask` block; others stay plain.
+                    val ask = r.tapMessage
+                    val send = { if (ask != null) { model.send(ask, ""); model.toast = "비서에게 부탁했어요" } }
+                    val trailing: @Composable RowScope.() -> Unit = {
+                        r.trailing?.let { Text(it, style = AxType.footnote, color = Theme.ax.secondary) }
+                        if (ask != null) Chevron()
+                    }
                     if (!sites) {
-                        CardRow(r.title, detail = r.detail) {
-                            r.trailing?.let { Text(it, style = AxType.footnote, color = Theme.ax.secondary) }
-                        }
+                        CardRow(r.title, detail = r.detail, modifier = if (ask != null) Modifier.clickable(onClick = send) else Modifier, trailing = trailing)
                     } else Box {
                         var menu by remember { mutableStateOf(false) }
-                        CardRow(r.title, detail = r.detail, modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true })) {
-                            r.trailing?.let { Text(it, style = AxType.footnote, color = Theme.ax.secondary) }
-                        }
+                        CardRow(r.title, detail = r.detail, modifier = Modifier.combinedClickable(onClick = send, onLongClick = { menu = true }), trailing = trailing)
                         DropdownMenu(menu, { menu = false }, containerColor = Theme.ax.card) {
                             DropdownMenuItem(
                                 text = { Text("이 사이트 잊기", style = AxType.body, color = SystemColor.red) },

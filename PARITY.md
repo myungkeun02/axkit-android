@@ -43,6 +43,7 @@
 | 홈 · 결재 | 사진이 아닌 첨부 파일 줄 (AttachedFiles, §19) | `Attachments.swift` | `design/AttachedFiles.kt` | 완료 |
 | 더보기 | 루틴 (RoutinesScreen, §17) | `RoutinesScreen.swift` | `RoutinesScreen.kt` | 완료 |
 | 더보기 | 새 기능: 파일 변경 · 알아 둔 사이트·방법 (§19·§20 블록 화면) | `MoreView.swift` (BlocksScreen) | `MoreBlocks.kt` | 완료 |
+| 더보기 | 드라이브 (§34): `message`가 있는 줄은 누르면 대화로 요약 부탁 (chevron) | — | `MoreBlocks.kt` | 완료 (화면 확인 전) |
 | 결재 | AX 맥: 카드 입력칸·비밀 PIN (CardFormView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 결재 | AX 맥: 카드에서 고르기 (CardSelectView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 홈 | AX 맥: 알림 방 · 읽기 전용 방 (views/channels, §7.2), 팀장 표시 | `HomeView.swift`, `ChatRoomView.swift` | `HomeView.kt`, `ChatRoomView.kt` | 완료 |

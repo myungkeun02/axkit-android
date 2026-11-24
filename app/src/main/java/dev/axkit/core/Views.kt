@@ -248,7 +248,10 @@ data class HardwareView(
 /** R9: server-drawn screens. */
 @Serializable
 data class BlocksView(val title: String = "", val blocks: List<Block> = emptyList()) {
-    @Serializable data class Row(val title: String, val detail: String? = null, val trailing: String? = null)
+    /** §34: a row with [message] can be tapped; it sends that sentence to the chat, like an `ask` block. */
+    @Serializable data class Row(val title: String, val detail: String? = null, val trailing: String? = null, val message: String? = null) {
+        val tapMessage: String? get() = message?.trim()?.takeIf { it.isNotEmpty() }
+    }
     @Serializable
     data class Block(
         /** `text` · `stat` · `list` · `note` · `ask` (a button that sends `message` to the main chat). */

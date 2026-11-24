@@ -667,7 +667,7 @@ const capabilities = {
     { name: 'today', version: 1, actions: [] }, { name: 'approvals', version: 1, actions: [] }, { name: 'bots', version: 1, actions: ['createTeam', 'setTiers', 'meeting', 'setInstructions'] },
     { name: 'docgraph', version: 1, actions: [] }, { name: 'calendar', version: 1, actions: ['add'] }, { name: 'jobs', version: 1, actions: ['toggle'] },
     { name: 'spending', version: 1, actions: ['categorize', 'budget', 'add'] }, { name: 'usage', version: 1, actions: [] }, { name: 'providers', version: 1, actions: [] }, { name: 'autonomy', version: 1, actions: ['revoke'] }, { name: 'modeltiers', version: 1, actions: ['rank', 'purpose'] },
-    { name: 'hardware', version: 1, actions: [] }, { name: 'recordings', version: 1, actions: [] }, { name: 'routines', version: 1, actions: ['toggle', 'remove'] }, { name: 'projects', version: 1, actions: ['save', 'refresh'] }, { name: 'team-plan', version: 1, actions: ['save', 'apply', 'decline'] }, { name: 'first-look', version: 1, actions: ['revise', 'apply', 'start'] }, { name: 'work', version: 1, actions: [] }, { name: 'people', version: 1, actions: ['edit'] }, { name: 'browser-live', version: 1, actions: ['start', 'tap', 'type', 'key', 'scroll', 'back', 'done'] }, { name: 'file-changes', version: 1, actions: [], ui: 'blocks', title: '파일 변경', icon: 'doc.badge.clock' }, { name: 'ways', version: 1, actions: [], ui: 'blocks', title: '알아 둔 사이트·방법', icon: 'globe' }, { name: 'parcel', version: 1, actions: [], title: '택배 조회', icon: 'shippingbox', ui: 'blocks' },
+    { name: 'hardware', version: 1, actions: [] }, { name: 'recordings', version: 1, actions: [] }, { name: 'routines', version: 1, actions: ['toggle', 'remove'] }, { name: 'projects', version: 1, actions: ['save', 'refresh'] }, { name: 'team-plan', version: 1, actions: ['save', 'apply', 'decline'] }, { name: 'first-look', version: 1, actions: ['revise', 'apply', 'start'] }, { name: 'work', version: 1, actions: [] }, { name: 'people', version: 1, actions: ['edit'] }, { name: 'browser-live', version: 1, actions: ['start', 'tap', 'type', 'key', 'scroll', 'back', 'done'] }, { name: 'file-changes', version: 1, actions: [], ui: 'blocks', title: '파일 변경', icon: 'doc.badge.clock' }, { name: 'ways', version: 1, actions: [], ui: 'blocks', title: '알아 둔 사이트·방법', icon: 'globe' }, { name: 'parcel', version: 1, actions: [], title: '택배 조회', icon: 'shippingbox', ui: 'blocks' }, { name: 'drive', version: 1, actions: [], ui: 'blocks', title: '드라이브', icon: 'externaldrive' },
   ],
 };
 
@@ -958,6 +958,16 @@ async function app(req, res, path, url) {
           { kind: 'list', title: '오늘 · 2건', rows: [{ title: '견적서_11월.pdf', detail: '새로 생김 · ~/Documents/한빛랩', trailing: '10:12' }, { title: '투자 자료.key', detail: '바뀜 · ~/Desktop', trailing: '09:40' }] },
           { kind: 'list', title: '어제 · 2건', rows: [{ title: '근무표.xlsx', detail: '바뀜 · ~/Documents/모아카페', trailing: '18:03' }, { title: '임시.txt', detail: '지워짐 · ~/Downloads', trailing: '11:20' }] },
           { kind: 'ask', title: '어제 뭐 바뀌었어?', message: '어제 뭐 바뀌었어?' }] }));
+        case 'drive': {
+          const row = (title, detail, trailing) => ({ title, detail, trailing, message: `드라이브의 "${title}" 내용을 요약해 줘` });
+          return send(res, 200, view(name, { title: '드라이브', blocks: [
+            { kind: 'stat', title: '최근 30일 동안 바뀐 내 파일', value: '4건' },
+            { kind: 'list', title: '오늘 · 2건', rows: [row('11월 매출 정리', '회의록 · owner@acme.example', '14:05'), row('신메뉴 기획안', '기획 · owner@acme.example', '10:20')] },
+            { kind: 'list', title: '어제 · 2건', rows: [row('근무표', '모아카페 · team@betalab.example', '18:03'), row('견적서_11월.pdf', '내 드라이브 · owner@acme.example', '09:12')] },
+            { kind: 'note', text: '내가 만든 파일만 보여요. 줄을 누르면 비서가 요약해 줘요.' },
+            { kind: 'ask', title: '이번 주에 바뀐 문서 정리해 줘', message: '이번 주에 드라이브에서 바뀐 문서 정리해 줘' },
+            { kind: 'ask', title: '드라이브에서 파일 찾기', message: '드라이브에서 파일 찾아 줘' }] }));
+        }
         case 'ways': return send(res, 200, view(name, { title: '알아 둔 사이트·방법', blocks: [
           { kind: 'text', text: '비서가 일할 때 먼저 찾아보는 사이트와, 해 본 적 있는 방법이에요.' },
           { kind: 'list', title: '사이트', rows: [{ title: 'admin.betalab.example', detail: '회사 관리 툴', trailing: '회사' }, { title: '쿠팡', detail: '생활용품 주문', trailing: '쇼핑' }] },
