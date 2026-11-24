@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ax-kit</string>
+    <string name="widget_name">오늘과 결재</string>
+    <string name="widget_description">기다리는 결재와 오늘 일정을 보여 줘요.</string>
+</resources>

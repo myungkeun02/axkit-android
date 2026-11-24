@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.AxKit" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+    </style>
+    <style name="Theme.AxKit.Translucent" parent="android:Theme.Translucent.NoTitleBar" />
+    <color name="page">#F2F2F7</color>
+</resources>

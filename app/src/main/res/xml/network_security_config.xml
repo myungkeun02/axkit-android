@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app talks only to the address saved at pairing, and PairingLink accepts plain http only for private
+     addresses (home network, tailnet 100.64/10). Android cannot express IP ranges here, so that check lives in code. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
