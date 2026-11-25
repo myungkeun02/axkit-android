@@ -155,6 +155,7 @@ private fun SettingsContent(inSheet: Boolean, onClose: () -> Unit) {
                 }
             }
         }
+        if (model.isPaired) PhoneSignalsSettingsPanel()
         if (model.isPaired) AppUpdateSettingsPanel()
         if (!notificationsOn) {
             Panel {

@@ -802,6 +802,36 @@ async function browserLive(req, res, m, path) {
   return ok({ accepted: true });
 }
 
+// 휴대폰 신호: POST /m/v1/ingest, checked like ax-kit src/mobile/schema.ts (ts within 5 min, 1–50 items, each up to
+// 48 hours old, known kinds, no empty text). /dev/ingest shows what came; /dev/ingest?fail=1 answers 503 until ?fail=0.
+const ingested = [];
+let ingestFail = false;
+const INGEST_KINDS = { notification: (i) => typeof i.app === 'string' && i.app.trim() && typeof i.text === 'string' && i.text.trim(),
+  sms: (i) => typeof i.text === 'string' && i.text.trim(), location: (i) => Math.abs(i.lat) <= 90 && Math.abs(i.lng) <= 180,
+  battery: (i) => i.level >= 0 && i.level <= 100, steps: (i) => i.steps >= 0 && i.steps <= 200000 };
+async function ingest(req, res) {
+  const auth = req.headers.authorization ?? '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token || !(tokens.has(token) || token.startsWith('mock-'))) return send(res, 401, { ok: false });
+  if (ingestFail) return send(res, 503, { ok: false });
+  const body = await readJson(req);
+  const ts = Date.parse(body?.ts ?? '');
+  if (body?.v !== 1 || !Number.isFinite(ts) || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50) return send(res, 400, { ok: false, error: 'shape' });
+  if (Math.abs(Date.now() - ts) > 5 * 60_000) return send(res, 400, { ok: false, error: 'stale' });
+  for (const item of body.items) {
+    const check = INGEST_KINDS[item?.kind];
+    if (!check || !check(item)) return send(res, 400, { ok: false, error: 'shape' });
+    const at = item.at === undefined ? ts : Date.parse(item.at);
+    if (!Number.isFinite(at) || Date.now() - at > 48 * 3600_000 || at - Date.now() > 5 * 60_000) return send(res, 400, { ok: false, error: 'stale' });
+  }
+  for (const item of body.items) {
+    ingested.push({ ...item, receivedAt: iso(now()) });
+    console.log(`[ingest] ${item.kind} ${JSON.stringify(item)}`);
+  }
+  ingested.splice(0, Math.max(0, ingested.length - 200));
+  return send(res, 200, { ok: true, stored: body.items.length });
+}
+
 async function app(req, res, path, url) {
   const auth = req.headers.authorization ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
@@ -1213,6 +1243,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/m/p/')) return send(res, 410, { ok: false, error: 'expired' });
     if (p.startsWith('/m/v1/app/')) return await app(req, res, p.slice('/m/v1/app/'.length), url);
+    if (p === '/m/v1/ingest') return req.method === 'POST' ? await ingest(req, res) : send(res, 405, { ok: false });
     // Dev helpers (no auth, this machine only): make things happen while watching the app.
     if (p === '/dev/card') {
       openCard({ cardId: `pay-${Date.now()}`, summary: '노트북 거치대를 쿠팡에서 살까요?', effects: ['pay'], amount: { value: 51250, currency: 'KRW' }, merchant: '쿠팡', note: '내일 도착' });
@@ -1225,6 +1256,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/dev/team-plan') { proposeTeamPlan(); return send(res, 200, { ok: true }); }
     if (p === '/dev/dictation') { dictationFail = Number(url.searchParams.get('fail') ?? 0); if (url.searchParams.get('text') !== null) dictationText = url.searchParams.get('text'); return send(res, 200, { ok: true, fail: dictationFail, text: dictationText }); }
+    if (p === '/dev/ingest') { if (url.searchParams.has('fail')) ingestFail = url.searchParams.get('fail') === '1'; return send(res, 200, { ok: true, fail: ingestFail, items: ingested.slice(-50) }); }
     if (p === '/dev/calendars') { calendarsMode = url.searchParams.get('mode') ?? 'many'; return send(res, 200, { ok: true, mode: calendarsMode }); }
     if (p === '/dev/work-idle') { workIdle = url.searchParams.get('on') !== '0'; return send(res, 200, { ok: true, idle: workIdle }); }
     if (p === '/dev/app-update') { apkBroken = url.searchParams.get('broken') === '1'; return send(res, 200, { ok: true, broken: apkBroken }); }

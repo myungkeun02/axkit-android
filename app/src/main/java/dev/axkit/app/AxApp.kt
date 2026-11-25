@@ -13,6 +13,8 @@ class AxApp : Application() {
         model = AppModel(this, KeystoreCredentialStore(this))
         Notifier.ensureChannel(this)
         if (model.isPaired) CatchUpWorker.schedule(this)
+        // 휴대폰 신호: the 15-minute check and location updates follow the owner's switches.
+        dev.axkit.app.signals.PhoneSignals.refresh(this)
         if (model.isPaired && model.alwaysOn) { AlwaysOnService.start(this); model.start() }
         // Back on a network (Wi-Fi ↔ LTE, out of a tunnel): reconnect at once instead of waiting out the backoff.
         getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {

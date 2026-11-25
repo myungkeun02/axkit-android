@@ -191,6 +191,13 @@ class ApiClient(val credentials: ServerCredentials, val http: OkHttpClient = def
 
     suspend fun postRaw(path: String, json: JsonElement): String = send(requestBuilder(path).post(json.toString().toRequestBody(jsonType)).build())
 
+    /** 휴대폰 신호: `POST {base}/m/v1/ingest` with the same token (not under `/m/v1/app`). Returns the raw answer. */
+    suspend fun ingest(json: JsonElement): String {
+        val builder = Request.Builder().url("$baseUrl/m/v1/ingest").post(json.toString().toRequestBody(jsonType))
+        authorize(builder)
+        return send(builder.build())
+    }
+
     // MARK: protocol calls
 
     suspend fun capabilities(): Capabilities = get(Capabilities.serializer(), "capabilities")

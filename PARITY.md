@@ -45,6 +45,7 @@
 | 더보기 | 새 기능: 파일 변경 · 알아 둔 사이트·방법 (§19·§20 블록 화면) | `MoreView.swift` (BlocksScreen) | `MoreBlocks.kt` | 완료 |
 | 더보기 | 드라이브 (§34): `message`가 있는 줄은 누르면 대화로 요약 부탁 (chevron) | — | `MoreBlocks.kt` | 완료 (화면 확인 전) |
 | 캘린더 | 캘린더 여러 개 (§36): 일정마다 캘린더 이름·색, 범례, 추가할 때 캘린더 고르기, 오늘에 캘린더 이름 | — | `CalendarScreen.kt` · `CalendarAddSheet.kt` · `TodaySheet.kt` | 완료 |
+| 설정 | 휴대폰 신호 (MacroDroid 대신): 문자·카톡·카드·은행 알림, 위치, 배터리, 걸음 수를 맥의 `/m/v1/ingest`로 | — (아이폰은 단축어) | `signals/` · `PhoneSignalsScreen.kt` · `core/Signals.kt` | 완료 |
 | 결재 | AX 맥: 카드 입력칸·비밀 PIN (CardFormView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 결재 | AX 맥: 카드에서 고르기 (CardSelectView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 홈 | AX 맥: 알림 방 · 읽기 전용 방 (views/channels, §7.2), 팀장 표시 | `HomeView.swift`, `ChatRoomView.swift` | `HomeView.kt`, `ChatRoomView.kt` | 완료 |
@@ -481,6 +482,21 @@ PDF·한글·엑셀·zip 같은 파일은 이름·크기 줄로 보여요. 누�
 | 아이폰 | 안드로이드 |
 |---|---|
 | (아직 없음) | <img src="docs/screenshots/24a-calendars-legend.png" width="160"> <img src="docs/screenshots/24b-calendar-picker.png" width="160"> <img src="docs/screenshots/24c-calendars-limited.png" width="160"> <img src="docs/screenshots/24d-today-calendar.png" width="160"> |
+
+### 휴대폰 신호 (MacroDroid 대신)
+설정 › 휴대폰 신호. 휴대폰이 보는 것을 짝지은 맥의 `POST /m/v1/ingest`(같은 주소, 같은 토큰)로 보내요. 맥이 나머지를 해요: 카드·은행 알림 → 가계부, 인증번호 → 브라우저 자동 로그인, 택배·예약 문자 → 할 일, 위치 → 점심·이동 시간·날씨·집/회사. 모든 종류가 처음엔 꺼져 있어요.
+- 알림 읽기(`NotificationListenerService`): 문자 권한 없이 메시지 앱 알림으로 문자를 읽어 `sms`(보낸 사람 = 알림 제목)로, 그 밖의 앱은 `notification`(앱 이름·제목·본문 200자)로 보내요. 계속 떠 있는 알림·묶음 요약·시스템 알림·ax-kit 자신의 알림·10분 안의 같은 알림은 건너뛰어요. 보낼 앱: "모든 앱" 또는 고른 앱(처음엔 메시지, 카톡, 카드·은행·페이 앱 + 이름에 카드/은행/페이가 들어간 앱).
+- 위치: Google Play의 fused location, 균형 전력, 30분 간격·250m 이상 움직일 때(앱이 닫혀 있어도 `PendingIntent`로 받음). 휴대폰이 장소 이름을 주면 "서울특별시 강남구 삼성동"처럼 붙여요. 같은 위치는 한 번만.
+- 배터리: 20% 아래로 내려가면 한 번, 30% 위로 충전되면 다시 준비. 걸음 수: Health Connect의 오늘 합계를 한 시간에 한 번, 바뀌었을 때만.
+- 보내기: 한 번에 50개까지, 맥에 안 닿으면 휴대폰에 모아 두고 WorkManager가 다시 보내요(화면이 꺼져도). 각 항목은 생긴 시각(`at`)을 가지고, 47시간이 지나면 버려요. 맥이 한 묶음을 거절하면 하나씩 다시 보내서 나쁜 하나가 나머지를 막지 않아요. 다시 켜거나 앱을 업데이트하면 위치 받기를 다시 걸어요.
+- 화면: 권한마다 무엇에 쓰는지와 켜기 버튼(알림 접근, 위치 항상 허용, 배터리 최적화 제외), 종류마다 스위치와 마지막으로 보낸 때, 못 보낸 개수, "지금 보내 보기"(배터리 잔량, 켜 두었다면 위치·걸음 수). '제한된 설정' 안내도 있어요.
+- 개인정보: 짝지은 맥에만 보내요. 휴대폰에는 다시 보낼 것만 잠깐 남고, 연결을 끊으면 지워요.
+- 가짜 맥: `/m/v1/ingest`가 진짜와 같은 규칙으로 받아요. `/dev/ingest`로 받은 것을 보고, `?fail=1`이면 503으로 거절해요.
+- 에뮬레이터에서 확인: 카드 승인 문자·인증번호 문자가 0.1초 안에 `sms`로 도착, 맥이 안 받을 때 모아 뒀다가 약 30초 뒤 원래 시각으로 다시 보냄, 고르지 않은 앱 알림은 안 보내고 "모든 앱"이면 보냄, 위치에 장소 이름, 배터리 15%에서 한 번만. 계속 떠 있는 알림 건너뛰기는 에뮬레이터에서 만들 수 없어 코드로만 확인했어요.
+
+| 아이폰 | 안드로이드 |
+|---|---|
+| (단축어로 보냄) | <img src="docs/screenshots/25a-phone-signals.png" width="160"> <img src="docs/screenshots/25b-signal-apps.png" width="160"> <img src="docs/screenshots/25c-phone-signals-test.png" width="160"> |
 
 ### 앱 리뷰 뒤 고친 것 (2026-11-23)
 - 대화와 읽음 표시를 휴대폰에 저장해요(`timeline.json`, 방마다 최근 300줄). 다시 켜면 저장된 곳부터 이어 받아요. 다른 기기에서 읽은 것(`views/channels`의 `readSeq`)도 반영해요.

@@ -481,12 +481,14 @@ class AppModel(private val context: Context, private val store: CredentialStore)
         adopt(c)
         CatchUpWorker.schedule(context)
         start()
+        dev.axkit.app.signals.PhoneSignals.refresh(context)
     }
 
     suspend fun unpair() {
         runCatching { client?.unpair() }
         stop()
         CatchUpWorker.cancel(context)
+        dev.axkit.app.signals.PhoneSignals.forget(context)
         store.clear()
         outbox.clear()
         credentials = null
