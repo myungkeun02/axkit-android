@@ -17,7 +17,8 @@ data class TodayView(
 ) {
     @Serializable data class Reply(val from: String = "", val text: String = "", val source: String? = null, val at: String? = null)
     @Serializable data class Spend(val amount: Double = 0.0, val count: Int = 0)
-    @Serializable data class Event(val title: String, val start: String, val end: String? = null, val allDay: Boolean? = null)
+    /** §36: [calendar] is the calendar name, sent when there are two or more. */
+    @Serializable data class Event(val title: String, val start: String, val end: String? = null, val allDay: Boolean? = null, val calendar: String? = null)
     @Serializable data class Todo(val text: String, val due: String? = null, val source: String? = null)
 }
 
@@ -131,9 +132,25 @@ data class DocumentDetail(
 @Serializable data class DocumentEnvelope(val document: DocumentDetail? = null)
 
 @Serializable
-data class CalendarView(val month: String = "", val days: List<Day> = emptyList()) {
+data class CalendarView(
+    val month: String = "",
+    val days: List<Day> = emptyList(),
+    /** §36: the owner's calendars (legend and the add picker); null from an older Mac. */
+    val calendars: List<Calendar>? = null,
+    /** §36: true when the Google sign-in can read only the main calendar. */
+    val calendarsLimited: Boolean? = null,
+) {
     @Serializable
-    data class Event(val id: String, val title: String, val start: IsoInstant, val end: IsoInstant? = null, val allDay: Boolean? = null, val place: String? = null)
+    data class Event(
+        val id: String, val title: String, val start: IsoInstant, val end: IsoInstant? = null, val allDay: Boolean? = null, val place: String? = null,
+        /** §36: calendar name (two or more calendars) and Google account (two or more accounts). */
+        val calendar: String? = null, val account: String? = null,
+    )
+    @Serializable
+    data class Calendar(
+        val id: String, val name: String, val primary: Boolean = false, val writable: Boolean = false,
+        val description: String? = null, val account: String? = null,
+    )
     @Serializable
     data class Done(val id: String, val title: String, val at: IsoInstant, val bot: Author? = null, val detail: String? = null)
     @Serializable

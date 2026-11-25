@@ -44,6 +44,7 @@
 | 더보기 | 루틴 (RoutinesScreen, §17) | `RoutinesScreen.swift` | `RoutinesScreen.kt` | 완료 |
 | 더보기 | 새 기능: 파일 변경 · 알아 둔 사이트·방법 (§19·§20 블록 화면) | `MoreView.swift` (BlocksScreen) | `MoreBlocks.kt` | 완료 |
 | 더보기 | 드라이브 (§34): `message`가 있는 줄은 누르면 대화로 요약 부탁 (chevron) | — | `MoreBlocks.kt` | 완료 (화면 확인 전) |
+| 캘린더 | 캘린더 여러 개 (§36): 일정마다 캘린더 이름·색, 범례, 추가할 때 캘린더 고르기, 오늘에 캘린더 이름 | — | `CalendarScreen.kt` · `CalendarAddSheet.kt` · `TodaySheet.kt` | 완료 |
 | 결재 | AX 맥: 카드 입력칸·비밀 PIN (CardFormView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 결재 | AX 맥: 카드에서 고르기 (CardSelectView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 홈 | AX 맥: 알림 방 · 읽기 전용 방 (views/channels, §7.2), 팀장 표시 | `HomeView.swift`, `ChatRoomView.swift` | `HomeView.kt`, `ChatRoomView.kt` | 완료 |
@@ -467,6 +468,19 @@ PDF·한글·엑셀·zip 같은 파일은 이름·크기 줄로 보여요. 누�
 | 아이폰 | 안드로이드 |
 |---|---|
 | (아직 없음) | <img src="docs/screenshots/23a-update-banner.png" width="160"> <img src="docs/screenshots/23b-update-permission.png" width="160"> <img src="docs/screenshots/23c-update-confirm.png" width="160"> <img src="docs/screenshots/23d-update-broken.png" width="160"> <img src="docs/screenshots/23e-update-settings.png" width="160"> |
+
+### 캘린더 여러 개 (§36, 서버 55d61ee)
+새 필드는 모두 선택이에요. 예전 맥이 아무것도 안 보내면 화면도 예전과 같아요.
+- 일정마다 아래에 캘린더 이름(계정이 둘 이상이면 계정 주소도)과 그 캘린더 색 점이 보여요. 달력 칸의 점도 그날 일정이 있는 캘린더 색이에요(최대 3개).
+- 범례는 `calendars`로 만들어요(둘 이상일 때). 기본 캘린더는 늘 파란색이에요. 나머지는 캘린더 id로 색을 정하고, 겹치면 다음 빈 색으로 옮겨요. 그래서 목록이 같으면 언제나 같은 색이에요. "한 일"의 초록은 따로 남겨 뒀어요.
+- 일정 추가: 쓸 수 있는(`writable`) 캘린더만 보여요. 기본 캘린더가 맨 위이고 처음부터 골라져 있어요. 쓸 수 있는 캘린더가 하나뿐이면 고르는 칸이 없어요. 고른 id를 `calendar`로 보내고, 답의 `calendar`로 "'모아카페' 캘린더에 넣었어요"라고 알려요.
+- `calendarsLimited`가 오면 범례 밑에 "기본 캘린더만 보여요 — 비서 맥에서 ax-kit connect google을 한 번 더 해 주세요" 한 줄이 보여요.
+- 오늘 화면: 일정 제목 밑에 캘린더 이름이 보여요.
+- 가짜 맥: `/dev/calendars?mode=many|one|limited|none`으로 바꿔 볼 수 있어요.
+
+| 아이폰 | 안드로이드 |
+|---|---|
+| (아직 없음) | <img src="docs/screenshots/24a-calendars-legend.png" width="160"> <img src="docs/screenshots/24b-calendar-picker.png" width="160"> <img src="docs/screenshots/24c-calendars-limited.png" width="160"> <img src="docs/screenshots/24d-today-calendar.png" width="160"> |
 
 ### 앱 리뷰 뒤 고친 것 (2026-11-23)
 - 대화와 읽음 표시를 휴대폰에 저장해요(`timeline.json`, 방마다 최근 300줄). 다시 켜면 저장된 곳부터 이어 받아요. 다른 기기에서 읽은 것(`views/channels`의 `readSeq`)도 반영해요.

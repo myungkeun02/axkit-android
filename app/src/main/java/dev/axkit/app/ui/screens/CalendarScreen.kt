@@ -7,6 +7,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +61,7 @@ import dev.axkit.app.ui.design.SystemColor
 import dev.axkit.app.ui.design.Theme
 import dev.axkit.app.ui.design.loaded
 import dev.axkit.core.CalendarView
+import dev.axkit.core.Calendars
 import dev.axkit.core.Format
 import dev.axkit.core.friendly
 import kotlinx.coroutines.CancellationException
@@ -135,8 +138,9 @@ fun CalendarScreen() {
                         LoadableView(state, retry = { load() }) { data ->
                             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 MonthGrid(month, selected, todayYmd, data) { selected = it }
-                                Legend()
-                                DayDetail(selected, data.day(selected))
+                                Legend(data.calendars)
+                                if (data.calendarsLimited == true) CalendarsLimitedNote()
+                                DayDetail(selected, data.day(selected), data.calendars)
                             }
                         }
                     }
@@ -147,6 +151,7 @@ fun CalendarScreen() {
 
     if (adding) NewEventSheet(
         day = selected,
+        calendars = state.loaded?.calendars,
         onClose = { adding = false },
         done = { added ->
             if (added != null) { selected = added; month = added.take(7) }
@@ -206,11 +211,35 @@ private fun MonthHeader(month: String, onPrev: () -> Unit, onNext: () -> Unit) {
     }
 }
 
+/** §36: a stable color per calendar; slot 0 (the main calendar) is the usual accent. Green stays for "한 일". */
 @Composable
-private fun Legend() {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        LegendItem(Theme.ax.accent, "일정")
+internal fun calendarColor(slot: Int): Color = when (slot) {
+    0 -> Theme.ax.accent
+    1 -> SystemColor.purple
+    2 -> SystemColor.orange
+    3 -> SystemColor.pink
+    4 -> SystemColor.teal
+    5 -> SystemColor.indigo
+    6 -> SystemColor.brown
+    else -> SystemColor.mint
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Legend(calendars: List<CalendarView.Calendar>?) {
+    val legend = Calendars.legend(calendars)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (legend.isEmpty()) LegendItem(Theme.ax.accent, "일정")
+        else legend.forEach { LegendItem(calendarColor(Calendars.slotIn(it, calendars)), it.name) }
         LegendItem(SystemColor.green, "한 일")
+    }
+}
+
+@Composable
+private fun CalendarsLimitedNote() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(SfIcons.of("info.circle"), null, Modifier.size(15.dp), tint = Theme.ax.secondary)
+        Text(Calendars.LIMITED, style = AxType.footnote, color = Theme.ax.secondary)
     }
 }
 
@@ -245,7 +274,7 @@ private fun MonthGrid(month: String, selected: String, today: String, data: Cale
                         Box(Modifier.weight(1f)) {
                             if (day != null) {
                                 val ymd = "$month-${day.toString().padStart(2, '0')}"
-                                DayCell(day, ymd == today, ymd == selected, data.day(ymd)) { onSelect(ymd) }
+                                DayCell(day, ymd == today, ymd == selected, data.day(ymd), data.calendars) { onSelect(ymd) }
                             } else {
                                 Spacer(Modifier.height(48.dp))
                             }
@@ -258,7 +287,7 @@ private fun MonthGrid(month: String, selected: String, today: String, data: Cale
 }
 
 @Composable
-private fun DayCell(day: Int, isToday: Boolean, isSelected: Boolean, data: CalendarView.Day?, onTap: () -> Unit) {
+private fun DayCell(day: Int, isToday: Boolean, isSelected: Boolean, data: CalendarView.Day?, calendars: List<CalendarView.Calendar>?, onTap: () -> Unit) {
     val events = data?.events?.size ?: 0
     val done = data?.done?.size ?: 0
     Column(
@@ -283,14 +312,17 @@ private fun DayCell(day: Int, isToday: Boolean, isSelected: Boolean, data: Calen
             )
         }
         Row(Modifier.height(6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (events > 0) Box(Modifier.size(6.dp).clip(CircleShape).background(Theme.ax.accent))
+            // One dot per calendar that has a plan that day (at most three).
+            data?.events.orEmpty().map { Calendars.slotOf(it, calendars) }.distinct().take(3).forEach { slot ->
+                Box(Modifier.size(6.dp).clip(CircleShape).background(calendarColor(slot)))
+            }
             if (done > 0) Box(Modifier.size(6.dp).clip(CircleShape).background(SystemColor.green))
         }
     }
 }
 
 @Composable
-private fun DayDetail(selected: String, day: CalendarView.Day?) {
+private fun DayDetail(selected: String, day: CalendarView.Day?, calendars: List<CalendarView.Calendar>?) {
     val parts = selected.split("-")
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
@@ -308,7 +340,7 @@ private fun DayDetail(selected: String, day: CalendarView.Day?) {
                 for (e in events) {
                     Row(
                         Modifier.clearAndSetSemantics {
-                            contentDescription = listOfNotNull(if (e.allDay == true) "종일" else Format.clock(e.start), e.title, e.place).joinToString(", ")
+                            contentDescription = listOfNotNull(if (e.allDay == true) "종일" else Format.clock(e.start), e.title, e.place, Calendars.label(e)).joinToString(", ")
                         },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -320,6 +352,13 @@ private fun DayDetail(selected: String, day: CalendarView.Day?) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(e.title, style = AxType.body.copy(fontWeight = FontWeight.Medium), color = Theme.ax.label)
                             if (e.place != null) Text(e.place!!, style = AxType.footnote, color = Theme.ax.secondary)
+                            // §36: which calendar (and account) the plan is on, with its legend color.
+                            Calendars.label(e)?.let { label ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Box(Modifier.size(8.dp).clip(CircleShape).background(calendarColor(Calendars.slotOf(e, calendars))))
+                                    Text(label, style = AxType.footnote, color = Theme.ax.secondary)
+                                }
+                            }
                         }
                     }
                 }

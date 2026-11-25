@@ -244,6 +244,26 @@ function documentDetail(id) {
 }
 
 const addedEvents = [];
+// §36: the owner's calendars. /dev/calendars?mode=many|one|limited|none switches what the screen gets.
+let calendarsMode = 'many';
+const CALENDARS = [
+  { id: 'owner@acme.example', name: '내 캘린더', primary: true, writable: true, account: 'owner@acme.example' },
+  { id: 'cafe-cal@group.calendar.example', name: '모아카페', primary: false, writable: true, description: '카페 근무·회의', account: 'owner@acme.example' },
+  { id: 'betalab-cal@group.calendar.example', name: '베타랩 업무', primary: false, writable: true, account: 'team@betalab.example' },
+  { id: 'ko.south_korea#holiday@group.v.calendar.example', name: '대한민국의 휴일', primary: false, writable: false },
+];
+const calendarOfTitle = (title) => /카페|원두/.test(title) ? CALENDARS[1] : /출시|투자/.test(title) ? CALENDARS[2] : CALENDARS[0];
+function withCalendar(ev) {
+  if (calendarsMode === 'one' || calendarsMode === 'none' || calendarsMode === 'limited') { const { calendarId, ...rest } = ev; return rest; }
+  const cal = (ev.calendarId && CALENDARS.find((c) => c.id === ev.calendarId)) || calendarOfTitle(ev.title);
+  return { ...ev, calendarId: undefined, calendar: cal.name, account: cal.account };
+}
+function calendarsField() {
+  if (calendarsMode === 'none') return {};
+  if (calendarsMode === 'one') return { calendars: [CALENDARS[0]] };
+  if (calendarsMode === 'limited') return { calendars: [CALENDARS[0]], calendarsLimited: true };
+  return { calendars: CALENDARS };
+}
 function calendarMonth(month) {
   const [y, m] = month.split('-').map(Number);
   const daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -273,6 +293,7 @@ function calendarMonth(month) {
       events.push({ id: `ev-${date}-3`, title: '카페 마감 정산', start: iso(kstAt(date, 21)), allDay: false });
     }
     if (d % 9 === 0) events.push({ id: `ev-${date}-ad`, title: '카드 결제일', start: iso(kstAt(date, 0)), allDay: true });
+    if (d === 25) events.push({ id: `ev-${date}-hol`, title: '기념일', start: iso(kstAt(date, 0)), allDay: true, calendarId: CALENDARS[3].id });
     if (date <= t) {
       const n = date === t ? 3 : (h % 4);
       for (let i = 0; i < n; i++) {
@@ -284,9 +305,10 @@ function calendarMonth(month) {
   }
   for (const ev of addedEvents) {
     const d = days.find((x) => x.date === kstYmd(new Date(ev.start)));
-    if (d) { d.events.push(ev); d.events.sort((x, y) => x.start.localeCompare(y.start)); }
+    if (d) { d.events.push({ ...ev }); d.events.sort((x, y) => x.start.localeCompare(y.start)); }
   }
-  return { month, timezone: 'Asia/Seoul', days };
+  for (const d of days) d.events = d.events.map(withCalendar);
+  return { month, timezone: 'Asia/Seoul', days, ...calendarsField() };
 }
 
 const jobs = {
@@ -929,7 +951,7 @@ async function app(req, res, path, url) {
     const [, name, action] = viewMatch;
     if (m === 'GET' && !action) {
       switch (name) {
-        case 'today': return send(res, 200, view(name, { date: today(), events: calendarMonth(today().slice(0, 7)).days.find((d) => d.date === today())?.events.map((e) => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay })) ?? [], todos: [{ text: '투자 자료 마지막 확인', due: today() }, { text: '이점장 월급 이체', due: today() }], pendingCards: cards.size }));
+        case 'today': return send(res, 200, view(name, { date: today(), events: calendarMonth(today().slice(0, 7)).days.find((d) => d.date === today())?.events.map((e) => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay, calendar: e.calendar })) ?? [], todos: [{ text: '투자 자료 마지막 확인', due: today() }, { text: '이점장 월급 이체', due: today() }], pendingCards: cards.size }));
         case 'approvals': return send(res, 200, view(name, { cards: [...cards.values()] }));
         case 'bots': return send(res, 200, view(name, { main: { name: '비서', subtitle: '무엇이든 먼저 여기에 말하세요' }, groups }));
         case 'docgraph': {
@@ -1130,9 +1152,11 @@ async function app(req, res, path, url) {
           start = new Date(body.start); end = body.end ? new Date(body.end) : undefined;
           if (isNaN(start) || (end && (isNaN(end) || end < start))) return send(res, 400, { ok: false, error: 'shape' });
         }
-        const ev = { id: `ev-new-${Date.now()}`, title, start: iso(start), end: end && iso(end), allDay: body.allDay === true, place: body.place };
+        const cal = typeof body.calendar === 'string' ? CALENDARS.find((c) => c.id === body.calendar || c.name === body.calendar) : CALENDARS[0];
+        if (!cal || !cal.writable) return send(res, 400, { ok: false, error: 'calendar', message: '그 캘린더에는 넣을 수 없어요.' });
+        const ev = { id: `ev-new-${Date.now()}`, title, start: iso(start), end: end && iso(end), allDay: body.allDay === true, place: body.place, calendarId: cal.id };
         addedEvents.push(ev);
-        return send(res, 200, { ok: true, view: name, action, data: { id: ev.id } });
+        return send(res, 200, { ok: true, view: name, action, data: { id: ev.id, ...(calendarsMode === 'many' ? { calendar: cal.name } : {}) } });
       }
       if (name === 'autonomy' && action === 'revoke') {
         const before = autonomy.rules.length;
@@ -1201,6 +1225,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/dev/team-plan') { proposeTeamPlan(); return send(res, 200, { ok: true }); }
     if (p === '/dev/dictation') { dictationFail = Number(url.searchParams.get('fail') ?? 0); if (url.searchParams.get('text') !== null) dictationText = url.searchParams.get('text'); return send(res, 200, { ok: true, fail: dictationFail, text: dictationText }); }
+    if (p === '/dev/calendars') { calendarsMode = url.searchParams.get('mode') ?? 'many'; return send(res, 200, { ok: true, mode: calendarsMode }); }
     if (p === '/dev/work-idle') { workIdle = url.searchParams.get('on') !== '0'; return send(res, 200, { ok: true, idle: workIdle }); }
     if (p === '/dev/app-update') { apkBroken = url.searchParams.get('broken') === '1'; return send(res, 200, { ok: true, broken: apkBroken }); }
     if (p === '/dev/work-done') { append({ type: 'notice', kind: 'dev.job', text: "개발 작업 'acme/acme-web: 로그인 고치기'를 마쳤어요. 브랜치 fix/login, 테스트 42개 통과. PR은 아직 만들지 않았어요." }); return send(res, 200, { ok: true }); }

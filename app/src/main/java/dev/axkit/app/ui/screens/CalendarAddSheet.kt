@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.Icon
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +39,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import dev.axkit.app.LocalModel
@@ -45,11 +49,18 @@ import dev.axkit.app.ui.design.ActionKind
 import dev.axkit.app.ui.design.AxSheet
 import dev.axkit.app.ui.design.AxType
 import dev.axkit.app.ui.design.BarButton
+import dev.axkit.app.ui.design.CardHeader
+import dev.axkit.app.ui.design.CardList
+import dev.axkit.app.ui.design.CardRow
 import dev.axkit.app.ui.design.Hairline
 import dev.axkit.app.ui.design.Page
 import dev.axkit.app.ui.design.Panel
+import dev.axkit.app.ui.design.SfIcons
 import dev.axkit.app.ui.design.SheetBar
 import dev.axkit.app.ui.design.Theme
+import dev.axkit.core.CalendarAdded
+import dev.axkit.core.CalendarView
+import dev.axkit.core.Calendars
 import dev.axkit.core.Format
 import dev.axkit.core.friendly
 import kotlinx.coroutines.launch
@@ -64,7 +75,7 @@ import java.time.temporal.ChronoUnit
 
 /** 일정 추가: title, day, time (or all day), place. Saved to the Mac's calendar. */
 @Composable
-fun NewEventSheet(day: String, onClose: () -> Unit, done: suspend (String?) -> Unit) {
+fun NewEventSheet(day: String, calendars: List<CalendarView.Calendar>? = null, onClose: () -> Unit, done: suspend (String?) -> Unit) {
     val model = LocalModel.current
     val scope = model.scope
     // Start on the selected day at the next whole hour, one hour long.
@@ -79,6 +90,9 @@ fun NewEventSheet(day: String, onClose: () -> Unit, done: suspend (String?) -> U
     var start by remember { mutableStateOf(initial) }
     var end by remember { mutableStateOf(initial.plusHours(1)) }
     var saving by remember { mutableStateOf(false) }
+    // §36: writable calendars only, main first and chosen by default; no picker with one (or none).
+    val choices = remember(calendars) { Calendars.writable(calendars) }
+    var calendarId by remember(calendars) { mutableStateOf(Calendars.defaultId(calendars)) }
 
     fun setStart(s: ZonedDateTime) { start = s; if (!end.isAfter(s)) end = s.plusHours(1) }
     fun setEnd(e: ZonedDateTime) { end = if (e.isBefore(start)) start else e }
@@ -95,9 +109,10 @@ fun NewEventSheet(day: String, onClose: () -> Unit, done: suspend (String?) -> U
                     put("start", JsonPrimitive(if (allDay) Format.ymd(start.toLocalDate()) else iso(start)))
                     if (!allDay) put("end", JsonPrimitive(iso(end)))
                     if (place.trim().isNotEmpty()) put("place", JsonPrimitive(place.trim()))
+                    if (choices.size >= 2) calendarId?.let { put("calendar", JsonPrimitive(it)) }
                 }
-                client.viewAction("calendar", "add", body)
-                model.toast = "캘린더에 넣었어요"
+                val into = client.viewAction(CalendarAdded.serializer(), "calendar", "add", body).calendar
+                model.toast = if (into != null && choices.size >= 2) "'$into' 캘린더에 넣었어요" else "캘린더에 넣었어요"
                 done(Format.ymd(start.toLocalDate()))
                 onClose()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -140,6 +155,7 @@ fun NewEventSheet(day: String, onClose: () -> Unit, done: suspend (String?) -> U
                     }
                 }
             }
+            if (choices.size >= 2) CalendarPicker(choices, calendars.orEmpty(), calendarId) { calendarId = it }
             Box {
                 ActionButton(
                     "캘린더에 넣기", kind = ActionKind.Primary,
@@ -148,6 +164,24 @@ fun NewEventSheet(day: String, onClose: () -> Unit, done: suspend (String?) -> U
                 if (saving) CircularProgressIndicator(
                     Modifier.align(Alignment.CenterEnd).padding(end = 16.dp).size(20.dp), color = Color.White, strokeWidth = 2.dp,
                 )
+            }
+        }
+    }
+}
+
+/** §36: which calendar to add to: a dot in the calendar's color, its name, and a check on the chosen one. */
+@Composable
+private fun CalendarPicker(choices: List<CalendarView.Calendar>, all: List<CalendarView.Calendar>, chosen: String?, onChoose: (String) -> Unit) {
+    Panel {
+        CardHeader("어느 캘린더에 넣을까요?")
+        CardList(choices) { c ->
+            CardRow(
+                c.name, detail = Calendars.pickerDetail(c, choices),
+                modifier = Modifier.clickable(role = Role.RadioButton) { onChoose(c.id) }.semantics { selected = c.id == chosen },
+            ) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(calendarColor(Calendars.slotIn(c, all))))
+                if (c.id == chosen) Icon(SfIcons.of("checkmark"), "선택됨", Modifier.size(20.dp), tint = Theme.ax.accent)
+                else Spacer(Modifier.size(20.dp))
             }
         }
     }

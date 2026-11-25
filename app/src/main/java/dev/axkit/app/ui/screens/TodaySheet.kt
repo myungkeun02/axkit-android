@@ -127,7 +127,11 @@ fun TodaySheet(onClose: () -> Unit) {
                                     style = AxType.subheadline.copy(fontFeatureSettings = "tnum"), color = Theme.ax.secondary,
                                     modifier = Modifier.width(76.dp).padding(top = 2.dp),
                                 )
-                                Text(ChatText.preview(e.title, 80), style = AxType.body, color = Theme.ax.label, modifier = Modifier.padding(start = 12.dp))
+                                Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(ChatText.preview(e.title, 80), style = AxType.body, color = Theme.ax.label)
+                                    // §36: the calendar's name when the Mac has two or more.
+                                    e.calendar?.takeIf { it.isNotBlank() }?.let { Text(it, style = AxType.footnote, color = Theme.ax.secondary) }
+                                }
                             }
                         }
                     } else {
