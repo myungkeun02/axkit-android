@@ -167,6 +167,9 @@ fun AddTeamSheet(onDismiss: () -> Unit, opened: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
 
     val ready = name.isNotBlank() && (groupId != "" || newGroup.isNotBlank())
+    // §37: one description → a whole team. The old form stays as "직접 정하기".
+    val canText = model.capabilities.hasAction("bots", "createTeamFromText")
+    var byText by remember { mutableStateOf(canText) }
 
     fun save() {
         val client = model.client ?: return
@@ -205,6 +208,24 @@ fun AddTeamSheet(onDismiss: () -> Unit, opened: (String) -> Unit) {
     AxSheet(onDismiss = onDismiss) {
         SheetBar("팀 추가", leading = { BarButton("취소") { onDismiss() } })
         Page(top = 8.dp) {
+            if (canText) Segmented(listOf("글로 설명하기", "직접 정하기"), if (byText) 0 else 1, Modifier.fillMaxWidth()) { byText = it == 0 }
+            if (canText && byText) {
+                if (groups.size > 1) Panel {
+                    Box {
+                        Row(Modifier.fillMaxWidth().clickable { menu = true }, verticalAlignment = Alignment.CenterVertically) {
+                            Text("어느 회사", style = AxType.body, color = Theme.ax.label, modifier = Modifier.weight(1f))
+                            Text(groups.firstOrNull { it.id == groupId }?.label ?: "비서가 고르기", style = AxType.body, color = Theme.ax.secondary)
+                            Icon(Icons.Rounded.UnfoldMore, null, Modifier.size(16.dp), tint = Theme.ax.secondary)
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            groups.forEach { g -> DropdownMenuItem(text = { Text(g.label) }, onClick = { groupId = g.id; menu = false }) }
+                            DropdownMenuItem(text = { Text("비서가 고르기") }, onClick = { groupId = ""; menu = false })
+                        }
+                    }
+                }
+                TeamFromTextForm(groupId.ifEmpty { null }) { channel -> onDismiss(); opened(channel) }
+                return@Page
+            }
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box {
@@ -281,6 +302,10 @@ private fun rankWords(rank: String?): String = when (rank) { "lead" -> "팀장";
 @Composable
 fun TeamSheet(team: BotsView.Team, onDismiss: () -> Unit) {
     val model = LocalModel.current
+    // After a rename or a move, read the team again from the reloaded bots.
+    @Suppress("NAME_SHADOWING") val team = model.bots?.allTeams?.firstOrNull { it.id == team.id } ?: team
+    var editing by remember { mutableStateOf<BotsView.Bot?>(null) }
+    val canEdit = model.capabilities.hasAction("bots", "editBot") || model.capabilities.hasAction("bots", "moveBot")
     val tiers = remember { mutableStateMapOf<String, String>() }
     val members = model.bots?.members(team).orEmpty()
     val order = listOf("lead", "staff", "reviewer")
@@ -304,6 +329,8 @@ fun TeamSheet(team: BotsView.Team, onDismiss: () -> Unit) {
        Column {
         SheetBar(team.name, trailing = { BarButton("닫기", bold = true) { onDismiss() } })
         Page(top = 8.dp) {
+            TeamNamePanel(team)
+            editing?.let { bot -> BotEditDialog(bot, team) { editing = null } }
             if (team.decidedBy == "ai") {
                 Panel {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -314,15 +341,15 @@ fun TeamSheet(team: BotsView.Team, onDismiss: () -> Unit) {
             }
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CardHeader("팀원 ${members.size}명", team.purpose)
+                    CardHeader("팀원 ${members.size}명", dev.axkit.core.BotEdit.teamModels(members).ifEmpty { null }?.let { "쓰는 AI: $it" })
                     CardList(members) { bot ->
                         Row(
                             Modifier.clickable { nav.push("bot-${bot.id}") { BotInstructionsScreen(bot.id) } },
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             BotAvatar(bot.name, size = 32.dp, avatar = bot.avatar, status = bot.status)
-                            CardRow(bot.name, rankWords(bot.rank) + " · 일하는 방식 보기") {
-                                Text(bot.tier?.let { "$it 등급" } ?: "", style = AxType.body, color = Theme.ax.secondary)
+                            CardRow(bot.name, listOf(rankWords(bot.rank), dev.axkit.core.BotEdit.modelLine(bot)).filter { it.isNotEmpty() }.joinToString(" · ")) {
+                                if (canEdit) Text("고치기", style = AxType.subheadlineBold, color = Theme.ax.accent, modifier = Modifier.clickable { editing = bot }.padding(4.dp))
                                 dev.axkit.app.ui.design.Chevron()
                             }
                         }

@@ -127,10 +127,12 @@ fun Screen(
     leading: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
     banner: (@Composable () -> Unit)? = null,
+    /** Replaces popping the screen (a screen with its own steps inside, like folders). */
+    onBack: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(Theme.ax.page)) {
-        AxTopBar(title, large = large, leading = leading, trailing = trailing)
+        AxTopBar(title, large = large, onBack = onBack, leading = leading, trailing = trailing)
         dev.axkit.app.ui.screens.RecordingBar()
         banner?.invoke()
         content()

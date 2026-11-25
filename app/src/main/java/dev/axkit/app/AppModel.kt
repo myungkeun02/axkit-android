@@ -816,14 +816,17 @@ class AppModel(private val context: Context, private val store: CredentialStore)
 
     /** A picture or file from the chat box goes to the assistant (`POST share`, 12 MB at most). */
     val canAttach: Boolean get() = capabilities.has("share")
+
+    /** §37: a team or bot room takes files only on a Mac that says `share-rooms` (an older one would drop them in the main chat). */
+    fun canAttach(room: String): Boolean = canAttach && (room.isEmpty() || capabilities.has("share-rooms"))
     var sendingFiles by mutableIntStateOf(0); private set
 
-    fun sendFile(bytes: ByteArray, name: String, contentType: String) {
+    fun sendFile(bytes: ByteArray, name: String, contentType: String, room: String = "") {
         val client = client ?: return
         if (bytes.size > 12 * 1024 * 1024) { toast = "12MB보다 큰 파일은 맥에서 직접 넣어 주세요."; return }
         sendingFiles++
         scope.launch {
-            try { client.share(bytes, name, contentType) }
+            try { client.share(bytes, name, contentType, channel = room.ifEmpty { null }) }
             catch (e: Exception) { toast = "${name}을(를) 보내지 못했어요. ${e.friendly}" }
             finally { sendingFiles-- }
         }

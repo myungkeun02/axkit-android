@@ -57,11 +57,16 @@ import kotlinx.coroutines.delay
 @Composable
 fun WorkStrip() {
     val model = LocalModel.current
-    if (!model.capabilities.hasView("work")) return
+    val hasWork = model.capabilities.hasView("work")
+    // 결재 next to the chat (desktop 56cc0a6): the waiting cards, answered right in the sheet.
+    val cards = model.timeline.openCards()
+    if (!hasWork && cards.isEmpty()) return
     var view by remember { mutableStateOf<WorkView?>(null) }
-    var open by remember { mutableStateOf(false) }
+    /** null = closed, 0 = 작업, 1 = 결재. */
+    var open by remember { mutableStateOf<Int?>(null) }
 
     suspend fun load() {
+        if (!hasWork) return
         val client = model.client ?: return
         runCatching { client.view(WorkView.serializer(), "work") }.onSuccess { view = it }
     }
@@ -74,33 +79,51 @@ fun WorkStrip() {
     }
 
     val line = WorkPanel.strip(view)
-    if (line != null) {
+    if (line != null || cards.isNotEmpty()) {
         Row(
             Modifier.padding(horizontal = 12.dp).padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                .background(Theme.ax.card).clickable { open = true }.padding(horizontal = 14.dp, vertical = 9.dp)
-                .semantics { contentDescription = "$line, 누르면 맡긴 일 보기" },
+                .background(Theme.ax.card).clickable { open = if (line != null) 0 else 1 }.padding(horizontal = 14.dp, vertical = 9.dp)
+                .semantics { contentDescription = listOfNotNull(line, if (cards.isNotEmpty()) "결재 ${cards.size}개" else null).joinToString(", ") + ", 누르면 열기" },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Theme.ax.accent)
-            Text(line, style = AxType.footnote, color = Theme.ax.label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (line != null) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Theme.ax.accent)
+                Text(line, style = AxType.footnote, color = Theme.ax.label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            } else {
+                Text("답을 기다리는 결재가 있어요", style = AxType.footnote, color = Theme.ax.label, maxLines = 1, modifier = Modifier.weight(1f))
+            }
+            if (cards.isNotEmpty()) Text(
+                "결재 ${cards.size}", style = AxType.captionBold, color = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.clip(CircleShape).background(SystemColor.red).clickable { open = 1 }.padding(horizontal = 8.dp, vertical = 3.dp),
+            )
             Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(18.dp), tint = Theme.ax.tertiary)
         }
     }
-    val shown = view
-    if (open && shown != null) WorkSheet(shown, onClose = { open = false })
+    val tab = open
+    if (tab != null) WorkSheet(view, hasWork, tab, onClose = { open = null })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkSheet(view: WorkView, onClose: () -> Unit) {
+private fun WorkSheet(view: WorkView?, hasWork: Boolean, start: Int, onClose: () -> Unit) {
     val model = LocalModel.current
-    val layout = WorkPanel.layout(view)
+    var tab by remember { mutableStateOf(if (hasWork) start else 1) }
+    val cards = model.timeline.openCards()
     val state = rememberModalBottomSheetState()
     ModalBottomSheet(
         onDismissRequest = onClose, sheetState = state, containerColor = Theme.ax.page,
         dragHandle = { Box(Modifier.padding(top = 6.dp).size(width = 36.dp, height = 5.dp).background(Theme.ax.tertiary, CircleShape)) },
     ) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
+            if (hasWork) Segmented(listOf("작업", if (cards.isEmpty()) "결재" else "결재 ${cards.size}"), tab, Modifier.fillMaxWidth().padding(vertical = 10.dp)) { tab = it }
+            if (tab == 1) {
+                Text("결재", style = AxType.title3, color = Theme.ax.label, modifier = Modifier.padding(vertical = 10.dp))
+                if (cards.isEmpty()) Text("지금은 결재할 게 없어요.", style = AxType.subheadline, color = Theme.ax.secondary, modifier = Modifier.padding(vertical = 8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { for (card in cards) androidx.compose.runtime.key(card.cardId) { dev.axkit.app.ui.design.CardPanel(card, compact = true) } }
+                return@Column
+            }
+            if (view == null) { Text("작업을 읽는 중…", style = AxType.subheadline, color = Theme.ax.secondary); return@Column }
+            val layout = WorkPanel.layout(view)
             Text(view.title, style = AxType.title3, color = Theme.ax.label, modifier = Modifier.padding(vertical = 10.dp))
             Section("하는 중", if (layout.runningCount > 0) "${layout.runningCount}개" else null)
             if (layout.active.isEmpty()) Text("지금은 하는 일이 없어요.", style = AxType.subheadline, color = Theme.ax.secondary, modifier = Modifier.padding(vertical = 8.dp))

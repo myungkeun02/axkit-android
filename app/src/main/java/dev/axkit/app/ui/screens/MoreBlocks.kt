@@ -51,27 +51,44 @@ import dev.axkit.core.BlocksView
 fun BlocksScreen(name: String) {
     val model = LocalModel.current
     var state by remember { mutableStateOf<Loadable<BlocksView>>(Loadable.Loading) }
+    // §38: rows with a query open "folders" of the same screen; Back (system or the arrow) goes up one.
+    var trail by androidx.compose.runtime.saveable.rememberSaveable(name, stateSaver = TrailSaver) { mutableStateOf(BlocksView.Trail()) }
 
     suspend fun load() {
         val client = model.client ?: return
-        loadInto({ state = it }) { client.view(BlocksView.serializer(), name) }
+        val query = trail.current
+        loadInto({ if (trail.current == query) state = it }) { client.view(BlocksView.serializer(), name, query) }
     }
 
-    LaunchedEffect(name) { load() }
-    Screen(state.loaded?.title ?: "") {
+    LaunchedEffect(name, trail) { load() }
+    androidx.activity.compose.BackHandler(enabled = trail.canGoBack) { trail = trail.back() }
+    Screen(state.loaded?.title ?: "", onBack = if (trail.canGoBack) ({ trail = trail.back() }) else null) {
         LoadableView(state, retry = { load() }) { v ->
             MoreRefresh({ load() }) {
                 Page {
-                    v.blocks.forEach { BlockView(it, name) }
+                    v.blocks.forEach { BlockView(it, name) { q -> trail = trail.open(q) } }
                 }
             }
         }
     }
 }
 
+/** Keeps the folder trail across rotation (each query as a JSON object). */
+private val TrailSaver = androidx.compose.runtime.saveable.Saver<BlocksView.Trail, String>(
+    save = { t -> kotlinx.serialization.json.JsonArray(t.stack.map { q -> kotlinx.serialization.json.JsonObject(q.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }) }).toString() },
+    restore = { text ->
+        val stack = runCatching {
+            (dev.axkit.core.ProtocolJson.parseToJsonElement(text) as kotlinx.serialization.json.JsonArray).map { e ->
+                (e as kotlinx.serialization.json.JsonObject).mapValues { (it.value as kotlinx.serialization.json.JsonPrimitive).content }
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+        stack?.let { BlocksView.Trail(it) } ?: BlocksView.Trail()
+    },
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BlockView(b: BlocksView.Block, name: String) {
+private fun BlockView(b: BlocksView.Block, name: String, open: (Map<String, String>) -> Unit) {
     val model = LocalModel.current
     when (b.kind) {
         "text" -> MarkdownText(b.text ?: "", style = AxType.subheadline, color = Theme.ax.secondary, modifier = Modifier.padding(horizontal = 4.dp))
@@ -88,14 +105,17 @@ private fun BlockView(b: BlocksView.Block, name: String) {
                 val sites = name == "ways" && (b.title ?: "") in listOf("사이트", "Sites")
                 CardList(b.rows ?: emptyList()) { r ->
                     // §34: a row with a message is tapped like an `ask` block; others stay plain.
+                    // §38: a row with a query opens that "folder" of this screen (and wins over message).
+                    val query = r.tapQuery
                     val ask = r.tapMessage
-                    val send = { if (ask != null) { model.send(ask, ""); model.toast = "비서에게 부탁했어요" } }
+                    val send = { if (query != null) open(query) else if (ask != null) { model.send(ask, ""); model.toast = "비서에게 부탁했어요" } }
+                    val tappable = query != null || ask != null
                     val trailing: @Composable RowScope.() -> Unit = {
                         r.trailing?.let { Text(it, style = AxType.footnote, color = Theme.ax.secondary) }
-                        if (ask != null) Chevron()
+                        if (tappable) Chevron()
                     }
                     if (!sites) {
-                        CardRow(r.title, detail = r.detail, modifier = if (ask != null) Modifier.clickable(onClick = send) else Modifier, trailing = trailing)
+                        CardRow(r.title, detail = r.detail, modifier = if (tappable) Modifier.clickable(onClick = send) else Modifier, trailing = trailing)
                     } else Box {
                         var menu by remember { mutableStateOf(false) }
                         CardRow(r.title, detail = r.detail, modifier = Modifier.combinedClickable(onClick = send, onLongClick = { menu = true }), trailing = trailing)

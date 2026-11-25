@@ -62,6 +62,8 @@ const groups = [
   makeGroup('me', '나', '개인 생활', [{ id: 'money', name: '가계부', purpose: '지출을 정리해요', staffCount: 3 }]),
 ];
 const allBots = () => groups.flatMap((g) => g.bots);
+// server d219cb3: the model each tier runs on now
+const MODEL_OF_TIER = { S: 'Claude Opus · Claude Code 구독', A: 'Claude Sonnet · Claude Code 구독', B: 'GPT-5 mini · OpenAI', C: 'Gemini Flash · Google' };
 const botById = (id) => allBots().find((b) => b.id === id);
 // The team lead speaks for a team room.
 const botByChannel = (ch) => allBots().find((b) => b.channel === ch && b.rank === 'lead');
@@ -684,9 +686,9 @@ const view = (name, data) => ({ ok: true, view: name, version: 1, data });
 
 const capabilities = {
   ok: true, protocol: 1, server: 'ax-kit-mock',
-  features: ['chat', 'cards', 'notices', 'share', 'stream', 'events', 'views', 'channels', 'card-options', 'card-reply', 'delegation', 'bots', 'recordings', 'bot-teams', 'push', 'routines', 'file-changes', 'browser-live', 'projects', 'team-plan', 'first-look', 'dictation', ...(apkInfo ? ['app-updates'] : [])],
+  features: ['chat', 'cards', 'notices', 'share', 'stream', 'events', 'views', 'channels', 'card-options', 'card-reply', 'delegation', 'bots', 'recordings', 'bot-teams', 'push', 'routines', 'file-changes', 'browser-live', 'projects', 'team-plan', 'first-look', 'dictation', 'share-rooms', ...(apkInfo ? ['app-updates'] : [])],
   views: [
-    { name: 'today', version: 1, actions: [] }, { name: 'approvals', version: 1, actions: [] }, { name: 'bots', version: 1, actions: ['createTeam', 'setTiers', 'meeting', 'setInstructions'] },
+    { name: 'today', version: 1, actions: [] }, { name: 'approvals', version: 1, actions: [] }, { name: 'bots', version: 1, actions: ['createTeam', 'setTiers', 'meeting', 'setInstructions', 'renameTeam', 'editBot', 'moveBot', 'createTeamFromText'] },
     { name: 'docgraph', version: 1, actions: [] }, { name: 'calendar', version: 1, actions: ['add'] }, { name: 'jobs', version: 1, actions: ['toggle'] },
     { name: 'spending', version: 1, actions: ['categorize', 'budget', 'add'] }, { name: 'usage', version: 1, actions: [] }, { name: 'providers', version: 1, actions: [] }, { name: 'autonomy', version: 1, actions: ['revoke'] }, { name: 'modeltiers', version: 1, actions: ['rank', 'purpose'] },
     { name: 'hardware', version: 1, actions: [] }, { name: 'recordings', version: 1, actions: [] }, { name: 'routines', version: 1, actions: ['toggle', 'remove'] }, { name: 'projects', version: 1, actions: ['save', 'refresh'] }, { name: 'team-plan', version: 1, actions: ['save', 'apply', 'decline'] }, { name: 'first-look', version: 1, actions: ['revise', 'apply', 'start'] }, { name: 'work', version: 1, actions: [] }, { name: 'people', version: 1, actions: ['edit'] }, { name: 'browser-live', version: 1, actions: ['start', 'tap', 'type', 'key', 'scroll', 'back', 'done'] }, { name: 'file-changes', version: 1, actions: [], ui: 'blocks', title: '파일 변경', icon: 'doc.badge.clock' }, { name: 'ways', version: 1, actions: [], ui: 'blocks', title: '알아 둔 사이트·방법', icon: 'globe' }, { name: 'parcel', version: 1, actions: [], title: '택배 조회', icon: 'shippingbox', ui: 'blocks' }, { name: 'drive', version: 1, actions: [], ui: 'blocks', title: '드라이브', icon: 'externaldrive' },
@@ -938,8 +940,11 @@ async function app(req, res, path, url) {
   if (m === 'POST' && path === 'share') {
     const bytes = await readBody(req);
     const name = decodeURIComponent(req.headers['x-file-name'] ?? 'shared');
-    const e = append({ type: 'message', role: 'owner', text: `파일 ${name} (${Math.round(bytes.length / 1024)}KB)를 보냈어요` });
-    later(800, () => say('받았어요. 정리해서 문서에 넣어 둘게요.'));
+    // §37: x-channel puts the file in a team or bot room.
+    const room = req.headers['x-channel'] ?? '';
+    if (room && !knownChannel(room)) return send(res, 400, { ok: false, error: 'shape' });
+    const e = append({ type: 'message', role: 'owner', text: `파일 ${name} (${Math.round(bytes.length / 1024)}KB)를 보냈어요`, ...(room ? { channel: room } : {}) });
+    later(800, () => (room ? botSay(room, `${name} 받았어요. 이 방 일에 쓸게요.`) : say('받았어요. 정리해서 문서에 넣어 둘게요.')));
     return send(res, 200, { ok: true, seq: e.seq });
   }
   const chunkMatch = path.match(/^recordings\/(r_[a-z0-9-]{1,40})\/chunks\/(\d{1,5})$/);
@@ -983,7 +988,7 @@ async function app(req, res, path, url) {
       switch (name) {
         case 'today': return send(res, 200, view(name, { date: today(), events: calendarMonth(today().slice(0, 7)).days.find((d) => d.date === today())?.events.map((e) => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay, calendar: e.calendar })) ?? [], todos: [{ text: '투자 자료 마지막 확인', due: today() }, { text: '이점장 월급 이체', due: today() }], pendingCards: cards.size }));
         case 'approvals': return send(res, 200, view(name, { cards: [...cards.values()] }));
-        case 'bots': return send(res, 200, view(name, { main: { name: '비서', subtitle: '무엇이든 먼저 여기에 말하세요' }, groups }));
+        case 'bots': return send(res, 200, view(name, { main: { name: '비서', subtitle: '무엇이든 먼저 여기에 말하세요' }, groups: groups.map((g) => ({ ...g, bots: g.bots.map((b) => ({ ...b, ...(MODEL_OF_TIER[b.tier] ? { model: MODEL_OF_TIER[b.tier] } : {}) })) })) }));
         case 'docgraph': {
           const doc = url.searchParams.get('doc');
           if (doc) return send(res, 200, view(name, { document: documentDetail(doc) }));
@@ -1012,7 +1017,34 @@ async function app(req, res, path, url) {
           { kind: 'ask', title: '어제 뭐 바뀌었어?', message: '어제 뭐 바뀌었어?' }] }));
         case 'drive': {
           const row = (title, detail, trailing) => ({ title, detail, trailing, message: `드라이브의 "${title}" 내용을 요약해 줘` });
+          // §38: rows[].query — accounts → 내 드라이브 / 공유 문서함 → folders → files.
+          if (url.searchParams.get('mode') === 'tree') {
+            const q = Object.fromEntries(url.searchParams);
+            const go = (extra) => ({ mode: 'tree', ...extra });
+            const FOLDERS = { '': ['기획', '회의록'], '기획': ['2026 신메뉴'], '회의록': [], '2026 신메뉴': [], shared: ['모아카페 공용'], '모아카페 공용': [] };
+            const FILES = { '기획': ['신메뉴 기획안', '가격표 초안'], '회의록': ['11월 매출 정리'], '2026 신메뉴': ['겨울 음료 시안'], '': ['견적서_11월.pdf'], '모아카페 공용': ['근무표'], shared: [] };
+            if (!q.source) return send(res, 200, view(name, { title: '드라이브', blocks: [
+              { kind: 'text', text: '📁 계정을 골라 주세요' },
+              { kind: 'list', title: '계정', rows: [
+                { title: 'owner@acme.example', detail: '내 드라이브 · 공유 문서함', query: go({ source: 'acme' }), message: '이 줄은 query가 먼저예요' },
+                { title: 'team@betalab.example', detail: '내 드라이브 · 공유 문서함', query: go({ source: 'beta' }) }] },
+              { kind: 'list', title: '처음으로', rows: [{ title: '최근 바뀐 파일 보기', query: {} }] }] }));
+            if (!q.folder) return send(res, 200, view(name, { title: '드라이브', blocks: [
+              { kind: 'text', text: `📁 ${q.source === 'acme' ? 'owner@acme.example' : 'team@betalab.example'}` },
+              { kind: 'list', rows: [
+                { title: '📁 내 드라이브', query: go({ source: q.source, folder: 'root', path: '내 드라이브' }) },
+                { title: '📁 공유 문서함', query: go({ source: q.source, folder: 'shared', path: '공유 문서함' }) }] }] }));
+            const key = q.folder === 'root' ? '' : q.folder;
+            const folders = (FOLDERS[key] ?? []).map((f) => ({ title: `📁 ${f}`, query: go({ source: q.source, folder: f, path: `${q.path} › ${f}` }) }));
+            const files = (FILES[key] ?? []).map((f) => row(f, '파일', '어제'));
+            return send(res, 200, view(name, { title: '드라이브', blocks: [
+              { kind: 'text', text: `📁 ${q.path}` },
+              ...(folders.length ? [{ kind: 'list', title: '폴더', rows: folders }] : []),
+              ...(files.length ? [{ kind: 'list', title: '파일', rows: files }] : []),
+              ...(!folders.length && !files.length ? [{ kind: 'note', text: '비어 있는 폴더예요.' }] : [])] }));
+          }
           return send(res, 200, view(name, { title: '드라이브', blocks: [
+            { kind: 'list', rows: [{ title: '📁 폴더로 보기', detail: '계정 → 내 드라이브 / 공유 문서함 → 폴더', query: { mode: 'tree' } }] },
             { kind: 'stat', title: '최근 30일 동안 바뀐 내 파일', value: '4건' },
             { kind: 'list', title: '오늘 · 2건', rows: [row('11월 매출 정리', '회의록 · owner@acme.example', '14:05'), row('신메뉴 기획안', '기획 · owner@acme.example', '10:20')] },
             { kind: 'list', title: '어제 · 2건', rows: [row('근무표', '모아카페 · team@betalab.example', '18:03'), row('견적서_11월.pdf', '내 드라이브 · owner@acme.example', '09:12')] },
@@ -1150,6 +1182,55 @@ async function app(req, res, path, url) {
         }
         return send(res, 200, { ok: true, view: name, action, data: { botId: bot.id, instructionsBy: bot.instructionsBy } });
       }
+      // §37: edits in place (no card) and a team from one description.
+      if (name === 'bots' && action === 'renameTeam') {
+        const team = groups.flatMap((g) => g.teams).find((t) => t.id === body.teamId);
+        const n = String(body.name ?? '').trim();
+        if (!team || !n || n.length > 40 || (body.purpose !== undefined && String(body.purpose).length > 200)) return send(res, 400, { ok: false, error: 'shape' });
+        team.name = n; if (body.purpose !== undefined) team.purpose = String(body.purpose).trim();
+        const lead = botById(team.id); if (lead && body.purpose !== undefined) lead.role = team.purpose;
+        return send(res, 200, { ok: true, view: name, action, data: { teamId: team.id, name: team.name } });
+      }
+      if (name === 'bots' && action === 'editBot') {
+        const bot = botById(body.botId);
+        if (!bot || (body.name !== undefined && !(String(body.name).trim() && String(body.name).length <= 40)) || (body.role !== undefined && !(String(body.role).trim().length >= 2 && String(body.role).length <= 120)))
+          return send(res, 400, { ok: false, error: 'shape' });
+        if (body.name !== undefined) bot.name = String(body.name).trim();
+        if (body.role !== undefined) bot.role = String(body.role).trim();
+        return send(res, 200, { ok: true, view: name, action, data: { botId: bot.id, name: bot.name, role: bot.role } });
+      }
+      if (name === 'bots' && action === 'moveBot') {
+        const bot = botById(body.botId);
+        const to = groups.flatMap((g) => g.teams).find((t) => t.id === body.teamId);
+        if (!bot || !to) return send(res, 400, { ok: false, error: 'shape' });
+        if (bot.rank === 'lead') return send(res, 400, { ok: false, error: 'lead', message: '팀장은 다른 팀으로 옮길 수 없어요. 팀원만 옮길 수 있어요.' });
+        const fromGroup = groups.find((g) => g.bots.includes(bot));
+        const toGroup = groups.find((g) => g.teams.includes(to));
+        const from = groups.flatMap((g) => g.teams).find((t) => t.id === bot.team);
+        if (from) from.members = from.members.filter((m) => m !== bot.id);
+        to.members.push(bot.id);
+        bot.team = to.id; bot.channel = to.channel;
+        if (fromGroup !== toGroup) { fromGroup.bots = fromGroup.bots.filter((b) => b !== bot); toGroup.bots.push(bot); }
+        return send(res, 200, { ok: true, view: name, action, data: { botId: bot.id, teamId: to.id } });
+      }
+      if (name === 'bots' && action === 'createTeamFromText') {
+        const text = String(body.text ?? '').trim();
+        if (text.length < 5 || text.length > 6000) return send(res, 400, { ok: false, error: 'shape' });
+        const group = groups.find((g) => g.id === body.group) ?? groups[0];
+        // The real server asks a model; the mock reads a few words.
+        const video = /영상|유튜브/.test(text);
+        const tname = video ? '영상 제작' : '새 프로젝트';
+        const id = `t${Date.now() % 100000}`;
+        const roles = video ? [['기획', '주제와 흐름을 잡아요'], ['대본', '대본을 써요'], ['편집 지시', '외주 편집자에게 줄 편집 지시서를 써요'], ['썸네일·제목', '썸네일 문구와 제목을 뽑아요']]
+          : [['조사', '필요한 자료를 모아요'], ['정리', '모은 것을 쉬운 말로 정리해요']];
+        const built = makeTeam({ id, name: tname, purpose: video ? '매주 화·금 영상 2개를 기획부터 편집 지시까지 준비해요' : text.slice(0, 80), staffCount: roles.length });
+        built.bots.slice(1).forEach((b, i) => { b.name = `${roles[i][0]} 담당`; b.role = roles[i][1]; });
+        built.bots[0].instructions = `오너가 적은 설명(꼭 지킴):\n${text}`; built.bots[0].instructionsBy = 'owner';
+        group.teams.push(built.team); group.bots.push(...built.bots);
+        later(400, () => botSay(id, `${built.team.name}이 만들어졌어요. 적어 주신 대로 일할게요.`));
+        return send(res, 200, { ok: true, view: name, action, data: { teamId: id, channel: id, group: group.id, name: built.team.name, purpose: built.team.purpose,
+          members: built.bots.map((b) => ({ id: b.id, name: b.name, role: b.role })), briefKept: true } });
+      }
       if (name === 'bots' && action === 'setTiers') {
         const team = groups.flatMap((g) => g.teams).find((t) => t.id === body.teamId);
         if (!team) return send(res, 400, { ok: false, error: 'shape' });
@@ -1252,6 +1333,11 @@ const server = http.createServer(async (req, res) => {
     if (p === '/dev/browser') {
       liveOpenPending(url.searchParams.get('reason') ?? 'login');
       append({ type: 'message', role: 'assistant', text: "쇼핑몰 로그인이 필요해서 멈췄어요. 앱의 브라우저 화면에서 직접 하실 수 있어요. 다 하셨으면 그 화면에서 '다 했어요'를 눌러 주세요." });
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/dev/digest') {
+      append({ type: 'notice', kind: 'digest', text: '저녁 답장 정리예요. 답을 기다리는 메일이 2개 있어요.\n1번 김대리님: 11월 견적서를 오늘 받고 싶어 해요.\n2번 박대표님: 다음 주 미팅 시간을 물었어요.\n고르시면 답장 초안을 써 드릴게요.',
+        choices: [{ id: 'digest-1', label: '1번 김대리님께 답장 쓰기' }, { id: 'digest-2', label: '2번 박대표님께 답장 쓰기' }, { id: 'digest-later', label: '내일 할게요' }] });
       return send(res, 200, { ok: true });
     }
     if (p === '/dev/team-plan') { proposeTeamPlan(); return send(res, 200, { ok: true }); }

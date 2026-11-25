@@ -91,6 +91,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import dev.axkit.app.LocalModel
 import dev.axkit.app.Tab
 import dev.axkit.app.ui.design.ActionKind
+import dev.axkit.app.ui.design.foreground
 import dev.axkit.app.ui.design.AttachedImages
 import dev.axkit.app.ui.design.AxType
 import dev.axkit.app.ui.design.BotAvatar
@@ -102,6 +103,7 @@ import dev.axkit.app.ui.design.background
 import dev.axkit.app.ui.design.safeTap
 import dev.axkit.core.CardEvent
 import dev.axkit.core.CardWords
+import dev.axkit.core.CardOption
 import dev.axkit.core.Choice
 import dev.axkit.core.DelegationEvent
 import dev.axkit.core.Format
@@ -170,6 +172,8 @@ fun ChatRoomView(room: String, modifier: Modifier = Modifier) {
         onDispose { if (model.viewingRoom == room) model.viewingRoom = null }
     }
     val recent = remember(items.size, items.lastOrNull()?.seq) { items.takeLast(2).map { it.seq }.toSet() }
+    // The one line whose buttons still work; every other line keeps its buttons, dimmed.
+    val live = remember(items.size, items.lastOrNull()?.seq) { dev.axkit.core.ChatChoices.liveSeq(items) }
     var openFolds by rememberSaveable(room) { mutableStateOf(setOf<String>()) }
 
     // Rows bottom-first: the list grows up from the composer like iOS defaultScrollAnchor(.bottom).
@@ -211,7 +215,7 @@ fun ChatRoomView(room: String, modifier: Modifier = Modifier) {
                     ReadMark -> ReadLine()
                     IntroMark -> Box(Modifier.padding(top = 40.dp)) { RoomIntro(room) }
                     is dev.axkit.core.PendingMessage -> PendingBubble(row)
-                    is RoomFeed.Row -> FeedRow(row, room, recent, isOpen = { it in openFolds }) { id ->
+                    is RoomFeed.Row -> FeedRow(row, room, recent, live, isOpen = { it in openFolds }) { id ->
                         openFolds = if (id in openFolds) openFolds - id else openFolds + id
                     }
                 }
@@ -258,7 +262,8 @@ private fun rememberRoomFeed(items: List<Timeline.Item>, room: String, lead: Roo
     return remember(room, items.size, items.firstOrNull()?.seq, items.lastOrNull()?.seq, lead, assistant, day) {
         val timeline = model.timeline
         val cardDates = items.filterIsInstance<Timeline.Item.Card>().mapNotNull { c -> timeline.card(c.id)?.let { c.id to it.at } }.toMap()
-        RoomFeed.build(items, room, lead, assistant, cardDates)
+        // Team and bot rooms show every line in order (no folding); the main room keeps work logs folded.
+        RoomFeed.build(items, room, lead, assistant, cardDates, short = room.isEmpty())
     }
 }
 
@@ -288,17 +293,17 @@ private fun RoomIntro(room: String) {
 }
 
 @Composable
-private fun FeedRow(row: RoomFeed.Row, room: String, recent: Set<Int>, isOpen: (String) -> Boolean, toggle: (String) -> Unit) {
+private fun FeedRow(row: RoomFeed.Row, room: String, recent: Set<Int>, live: Int?, isOpen: (String) -> Boolean, toggle: (String) -> Unit) {
     val model = LocalModel.current
     when (row) {
         is RoomFeed.Row.Day -> DayLine(row.label)
-        is RoomFeed.Row.EntryRow -> FeedEntry(row.entry, room, showFace = room.isNotEmpty(), showChoices = row.entry.seq in recent)
+        is RoomFeed.Row.EntryRow -> FeedEntry(row.entry, room, showFace = room.isNotEmpty(), showChoices = row.entry.seq in recent, liveSeq = live)
         is RoomFeed.Row.FoldedRow -> FoldedRun(row.folded, room, isOpen(row.folded.id)) { toggle(row.folded.id) }
         is RoomFeed.Row.System -> when (val item = row.item) {
-            is Timeline.Item.Notice -> NoticeRow(item.e, room, showChoices = item.seq in recent)
+            is Timeline.Item.Notice -> NoticeRow(item.e, room, active = item.seq == live)
             is Timeline.Item.Card -> {
                 val card = model.timeline.card(item.id)
-                if (card != null && !model.timeline.isDuplicate(item.id)) CardLine(card)
+                if (card != null && !model.timeline.isDuplicate(item.id)) CardBubble(card)
             }
             is Timeline.Item.Delegation -> DelegationRow(item.e)
             is Timeline.Item.Message -> {}
@@ -370,7 +375,7 @@ private fun Composer(room: String, placeholder: String) {
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (room.isEmpty() && model.canAttach && !listening) AttachButton()
+            if (model.canAttach(room) && !listening) AttachButton(room)
             val shape = RoundedCornerShape(20.dp)
             BasicTextField(
                 value = field, onValueChange = { field = it }, minLines = 1, maxLines = 6,
@@ -491,7 +496,7 @@ private fun LevelMeter(level: Float, modifier: Modifier = Modifier) {
 
 /** ＋ next to the main chat box: 사진 보내기 (up to 5, as JPEG under 12 MB) or 파일 보내기. */
 @Composable
-private fun AttachButton() {
+private fun AttachButton(room: String) {
     val model = LocalModel.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -503,7 +508,7 @@ private fun AttachButton() {
                     runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
                 } ?: return@forEachIndexed
                 val (out, type) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { PhotoForSending.make(bytes) }
-                model.sendFile(out, "사진-${System.currentTimeMillis() / 1000}-${i + 1}.${if (type == "image/jpeg") "jpg" else "png"}", type)
+                model.sendFile(out, "사진-${System.currentTimeMillis() / 1000}-${i + 1}.${if (type == "image/jpeg") "jpg" else "png"}", type, room)
             }
         }
     }
@@ -517,7 +522,7 @@ private fun AttachButton() {
                     runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
                 }
                 if (bytes == null) { model.toast = "${name}을(를) 열지 못했어요."; continue }
-                model.sendFile(bytes, name, context.contentResolver.getType(uri) ?: "application/octet-stream")
+                model.sendFile(bytes, name, context.contentResolver.getType(uri) ?: "application/octet-stream", room)
             }
         }
     }
@@ -657,7 +662,7 @@ fun ExpandableText(text: String, limit: Int = 10, style: androidx.compose.ui.tex
 
 /** One line in a room: face and name on the first of a run, who it was said to, the bubble, then any replies folded below. */
 @Composable
-fun FeedEntry(entry: RoomFeed.Entry, room: String, showFace: Boolean, showChoices: Boolean, compact: Boolean = false) {
+fun FeedEntry(entry: RoomFeed.Entry, room: String, showFace: Boolean, showChoices: Boolean, compact: Boolean = false, liveSeq: Int? = null) {
     val model = LocalModel.current
     if (entry.speaker.isOwner) {
         OwnerBubble(entry.text, null, time = if (entry.showHeader) entry.at else null)
@@ -745,7 +750,8 @@ fun FeedEntry(entry: RoomFeed.Entry, room: String, showFace: Boolean, showChoice
                 is Timeline.Item.Notice -> s.e.choices
                 else -> null
             }
-            if (showChoices && !choices.isNullOrEmpty()) ChoiceButtons(choices, room, entry.seq)
+            // Buttons stay as a record; only the conversation's live line takes taps (the rest are dimmed).
+            if (!choices.isNullOrEmpty()) ChoiceButtons(choices, room, entry.seq, active = entry.seq == liveSeq)
             val source = entry.source
             // The newest bot message shows the two buttons; older ones keep them behind a long press.
             if (source is Timeline.Item.Message && model.canReact && (showChoices || model.reactions[source.seq] != null)) ReactionButtons(source.seq)
@@ -900,7 +906,7 @@ fun ReactionButtons(seq: Int) {
 
 /** Choices side by side when they fit, else one under another (iOS ViewThatFits). */
 @Composable
-fun ChoiceButtons(choices: List<Choice>, room: String, messageSeq: Int) {
+fun ChoiceButtons(choices: List<Choice>, room: String, messageSeq: Int, active: Boolean = true) {
     val model = LocalModel.current
     val gap = 8.dp
     // One pick per row: after it the row stays as a record (the picked one filled, the rest faded) and takes no taps.
@@ -911,10 +917,10 @@ fun ChoiceButtons(choices: List<Choice>, room: String, messageSeq: Int) {
             Text(
                 choice.label, style = AxType.subheadline.copy(fontWeight = FontWeight.Medium),
                 color = if (isPicked) Color.White else Theme.ax.accent,
-                modifier = Modifier.alpha(if (picked == null || isPicked) 1f else 0.4f).clip(CircleShape)
+                modifier = Modifier.alpha(if (isPicked || (picked == null && active)) 1f else 0.4f).clip(CircleShape)
                     .background(if (isPicked) Theme.ax.accent else ActionKind.Secondary.background())
-                    .then(if (picked == null) Modifier.safeTap { model.choose(choice, room, messageSeq) } else Modifier)
-                    .semantics { if (picked != null) stateDescription = if (isPicked) "골랐어요" else "고르지 않았어요" }
+                    .then(if (picked == null && active) Modifier.safeTap { model.choose(choice, room, messageSeq) } else Modifier)
+                    .semantics { stateDescription = when { picked != null && isPicked -> "골랐어요"; picked != null -> "고르지 않았어요"; !active -> "지난 버튼이에요"; else -> "" } }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
@@ -941,7 +947,7 @@ fun ChoiceButtons(choices: List<Choice>, room: String, messageSeq: Int) {
 }
 
 @Composable
-fun NoticeRow(notice: NoticeEvent, room: String, showChoices: Boolean) {
+fun NoticeRow(notice: NoticeEvent, room: String, active: Boolean) {
     val text = remember(notice.text) { ChatText.clean(notice.text) }
     if (notice.isUrgent || notice.isRoutineResult || notice.isWorkResult) {
         // A seat that opened up, a text that looks like smishing, a routine's result: a card that stands out, not a grey line.
@@ -971,14 +977,14 @@ fun NoticeRow(notice: NoticeEvent, room: String, showChoices: Boolean) {
                     modifier = Modifier.safeTap { nav.push("work") { WorkScreen() } }.padding(vertical = 2.dp))
             }
             val choices = notice.choices
-            if (showChoices && !choices.isNullOrEmpty()) ChoiceButtons(choices, room, notice.seq)
+            if (!choices.isNullOrEmpty()) ChoiceButtons(choices, room, notice.seq, active)
         }
         return
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ExpandableText(text, limit = 6, style = AxType.footnote.copy(textAlign = TextAlign.Center), color = Theme.ax.secondary)
         val choices = notice.choices
-        if (showChoices && !choices.isNullOrEmpty()) ChoiceButtons(choices, room, notice.seq)
+        if (!choices.isNullOrEmpty()) ChoiceButtons(choices, room, notice.seq, active)
     }
 }
 
@@ -1013,6 +1019,70 @@ fun CardLine(card: CardEvent) {
         maxLines = if (open) 8 else 3,
         modifier = Modifier.alpha(if (open) 1f else 0.7f).safeTap { if (open) model.tab = Tab.Approvals },
     )
+}
+
+/**
+ * A 결재 in the chat reads like the assistant asking: one bubble with the "결재 요청" chip, the question and why, and its
+ * buttons inside. Answered, the buttons dim (the picked one stays filled) and the answer shows as the owner's line.
+ * A card with a form or a menu is answered in 결재.
+ */
+@Composable
+fun CardBubble(card: CardEvent) {
+    val model = LocalModel.current
+    val open = model.timeline.isOpen(card.cardId)
+    val closure = model.timeline.closure(card.cardId)
+    val options = card.options?.takeIf { it.isNotEmpty() } ?: CardWords.defaultOptions(card)
+    val inBubble = dev.axkit.core.ChatChoices.answersInBubble(card)
+    val answered = remember(card, closure) { dev.axkit.core.ChatChoices.answeredOption(card, closure) }
+    val echo = remember(card, closure) { dev.axkit.core.ChatChoices.cardEcho(card, closure) }
+    var busy by remember(card.cardId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.weight(1f, fill = false).clip(RoundedCornerShape(Theme.corner)).background(Theme.assistantBubble)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    if (open) "결재 요청" else "결재 끝 · ${CardWords.closedLabel(closure, expired = closure == null)}",
+                    style = AxType.captionBold, color = if (open) Theme.ax.accent else Theme.ax.secondary,
+                    modifier = Modifier.clip(CircleShape).background(if (open) ActionKind.Secondary.background() else Theme.ax.fill)
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+                ExpandableText(remember(card) { CardWords.chatLine(card) }, limit = if (open) 10 else 4, style = AxType.body, color = Theme.ax.label)
+                if (inBubble && (card.options != null || card.selects.isNullOrEmpty())) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (option in options) {
+                            val picked = answered == option.id
+                            val kind = when (option.toneKind) { CardOption.Tone.Primary -> ActionKind.Primary; CardOption.Tone.Danger -> ActionKind.Danger; else -> ActionKind.Secondary }
+                            Row(
+                                Modifier.alpha(if (open || picked) 1f else 0.4f).clip(CircleShape)
+                                    .background(if (!open && picked) Theme.ax.accent else kind.background())
+                                    .then(if (open && busy == null) Modifier.safeTap {
+                                        if (model.isSwiping) return@safeTap
+                                        busy = option.id
+                                        scope.launch { model.answer(card, CardWords.answer(option)); busy = null }
+                                    } else Modifier)
+                                    .semantics { if (!open) stateDescription = if (picked) "골랐어요" else "지난 버튼이에요" }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(option.label, style = AxType.subheadline.copy(fontWeight = FontWeight.Medium), color = if (!open && picked) Color.White else kind.foreground())
+                                if (busy == option.id) androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = kind.foreground())
+                            }
+                        }
+                    }
+                }
+                if (open) Text(
+                    if (inBubble) "다른 지시 쓰기 ›" else "결재에서 답하기 ›", style = AxType.footnoteBold, color = Theme.ax.accent,
+                    modifier = Modifier.safeTap { model.tab = Tab.Approvals }.padding(vertical = 2.dp),
+                )
+            }
+            Spacer(Modifier.width(28.dp))
+        }
+        if (echo != null) OwnerBubble(echo, null)
+    }
 }
 
 /** Small white card in the chat for things that aren't messages (맡김, 결재 요청). Tap opens where it points. */

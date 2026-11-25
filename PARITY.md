@@ -46,6 +46,8 @@
 | 더보기 | 드라이브 (§34): `message`가 있는 줄은 누르면 대화로 요약 부탁 (chevron) | — | `MoreBlocks.kt` | 완료 (화면 확인 전) |
 | 캘린더 | 캘린더 여러 개 (§36): 일정마다 캘린더 이름·색, 범례, 추가할 때 캘린더 고르기, 오늘에 캘린더 이름 | — | `CalendarScreen.kt` · `CalendarAddSheet.kt` · `TodaySheet.kt` | 완료 |
 | 설정 | 휴대폰 신호 (MacroDroid 대신): 문자·카톡·카드·은행 알림, 위치, 배터리, 걸음 수를 맥의 `/m/v1/ingest`로 | — (아이폰은 단축어) | `signals/` · `PhoneSignalsScreen.kt` · `core/Signals.kt` | 완료 |
+| 대화·팀 | 데스크톱 v0.1.50 맞춤 (§37): 버튼 있는 알림·결재 카드를 말풍선으로, 고른 답은 내 말로, 지난 버튼은 흐리게, 작업 | 결재 시트, 글로 팀 만들기, 팀 화면에서 바로 고치기, 봇마다 AI 모델, 팀·봇 방은 접지 않음, 방에서 파일 보내기 | — | `ChatChoices.kt` · `ChatRoomView.kt` · `ChatWorkSheet.kt` · `TeamEdit.kt` · `TeamScreens.kt` | 완료 |
+| 새 기능 화면 | 줄 이동 (§38): `rows[].query`가 있는 줄을 누르면 같은 화면을 그 query로 다시 읽음(드라이브 폴더), 뒤로 가기로 한 단계씩 | — | `MoreBlocks.kt` · `Views.kt` | 완료 |
 | 결재 | AX 맥: 카드 입력칸·비밀 PIN (CardFormView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 결재 | AX 맥: 카드에서 고르기 (CardSelectView, §7.3) | `CardPanel.swift` | `design/CardPanel.kt` | 완료 |
 | 홈 | AX 맥: 알림 방 · 읽기 전용 방 (views/channels, §7.2), 팀장 표시 | `HomeView.swift`, `ChatRoomView.swift` | `HomeView.kt`, `ChatRoomView.kt` | 완료 |
@@ -482,6 +484,30 @@ PDF·한글·엑셀·zip 같은 파일은 이름·크기 줄로 보여요. 누�
 | 아이폰 | 안드로이드 |
 |---|---|
 | (아직 없음) | <img src="docs/screenshots/24a-calendars-legend.png" width="160"> <img src="docs/screenshots/24b-calendar-picker.png" width="160"> <img src="docs/screenshots/24c-calendars-limited.png" width="160"> <img src="docs/screenshots/24d-today-calendar.png" width="160"> |
+
+### blocks 화면의 줄 이동 (§38, 서버 962456b)
+- `rows[].query`가 있는 줄은 눌러서 같은 화면을 `views/<name>?<query>`로 다시 읽어요(폴더 열기). `{}`는 처음 화면. `message`와 같이 오면 `query`가 먼저예요.
+- 연 query를 쌓아 두고, 휴대폰의 뒤로 가기와 왼쪽 위 화살표가 한 단계씩 올라가요. 처음 화면에서 뒤로 가면 화면을 닫아요. 화면을 돌려도 위치가 남아요.
+- 드라이브: "📁 폴더로 보기" → 계정 → 내 드라이브 / 공유 문서함 → 폴더 → 파일(누르면 요약 부탁). 가짜 맥에 같은 폴더 트리를 넣었어요.
+- 메일 화면(`views/mail`)은 blocks 화면이라 앱을 바꾸지 않아도 맥이 알려 주면 더보기에 떠요.
+
+<img src="docs/screenshots/27-drive-folders.png" width="200">
+
+### 데스크톱 v0.1.50에 맞춤 (§37, 서버 c7af535)
+- 대화: 버튼이 있거나 두 줄 넘는 비서 방 알림은 비서 말풍선 하나, 버튼은 그 안에. 버튼은 숨기지 않고 남아요. 가장 최근 버튼만 누를 수 있고, 내가 다음 말을 하면 지난 버튼은 흐려져요. 고른 버튼은 진하게, 그 글은 바로 내 말로 보여요.
+- 결재 카드도 대화에서는 말풍선: "결재 요청" 칩, 질문과 이유, 버튼. 답하면 "결재 끝 · 승인했어요"로 바뀌고 버튼이 흐려지며 고른 답이 내 말로 붙어요. 입력 칸·선택 메뉴가 있는 카드는 "결재에서 답하기 ›".
+- 대화창 위 줄: 하는 일과 "결재 N" 빨간 배지. 누르면 작업 | 결재 시트(결재 탭에서 바로 답하기). 하고 있는 일 화면이 없는 맥이면 결재만.
+- 팀·봇 방: 모든 대화를 차례대로(접기·답글 묶기 없음). 비서 방은 예전처럼 작업 기록을 접어요. ("짧게 보기" 스위치는 아직 없어요.)
+- 팀 추가: "글로 설명하기"(기본) — 큰 칸 하나에 적으면 `createTeamFromText`로 팀을 만들고, 만든 팀(이름·하는 일·팀원과 역할, 안내문을 팀장 지시로 넣었는지)을 보여 줘요. "직접 정하기"는 예전 양식.
+- 팀 설정: 팀 이름·하는 일 "고치기"(`renameTeam`), 팀원마다 "고치기"로 이름·역할(`editBot`)과 다른 팀으로 옮기기(`moveBot`, 팀장은 안 됨). 맥이 이 액션을 알 때만 보여요.
+- 봇마다 쓰는 AI: `views/bots`의 `model`을 등급 옆에("등급 B · GPT-5 mini · OpenAI"), 팀 위에는 팀이 쓰는 AI.
+- 팀·봇 방에서도 사진·파일 보내기: `capabilities.features`에 `share-rooms`가 있을 때만, `x-channel` 헤더로 그 방에.
+- 가짜 맥: 새 액션 네 개, 봇마다 `model`, `share-rooms`, `/dev/digest`(번호 버튼이 붙은 저녁 알림).
+- 에뮬레이터에서 확인: 알림 말풍선과 버튼, 버튼을 누르면 내 말로 보이고 나머지는 흐려짐, 결재 카드 말풍선에서 승인, 결재 시트, 팀 방에서 파일을 보내면 그 방에 도착, 팀 이름 바꾸기, 팀원을 디자인팀으로 옮기기, 글로 팀 만들고 방 열기.
+
+| 아이폰 | 안드로이드 |
+|---|---|
+| (아직 없음) | <img src="docs/screenshots/26a-notice-bubble.png" width="160"> <img src="docs/screenshots/26b-picked-as-my-line.png" width="160"> <img src="docs/screenshots/26c-card-bubble-answered.png" width="160"> <img src="docs/screenshots/26d-approvals-sheet.png" width="160"> <img src="docs/screenshots/26e-team-room-all-lines.png" width="160"> <img src="docs/screenshots/26f-team-models.png" width="160"> <img src="docs/screenshots/26g-edit-member.png" width="160"> <img src="docs/screenshots/26h-team-from-text.png" width="160"> |
 
 ### 휴대폰 신호 (MacroDroid 대신)
 설정 › 휴대폰 신호. 휴대폰이 보는 것을 짝지은 맥의 `POST /m/v1/ingest`(같은 주소, 같은 토큰)로 보내요. 맥이 나머지를 해요: 카드·은행 알림 → 가계부, 인증번호 → 브라우저 자동 로그인, 택배·예약 문자 → 할 일, 위치 → 점심·이동 시간·날씨·집/회사. 모든 종류가 처음엔 꺼져 있어요.

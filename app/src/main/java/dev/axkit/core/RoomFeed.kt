@@ -79,6 +79,11 @@ object RoomFeed {
     fun build(
         items: List<Timeline.Item>, room: String, lead: Speaker?, assistant: String,
         cardDates: Map<String, Instant> = emptyMap(), now: Instant = Instant.now(), zone: ZoneId = Format.seoul, foldAt: Int = 4,
+        /**
+         * 짧게 보기: replies tucked under what they answer and long runs folded into one line. Off = every line in order
+         * with its speaker (team and bot rooms, where the owner wants the whole conversation).
+         */
+        short: Boolean = true,
     ): List<Row> {
         // 1. Every item → an entry (someone said something) or a system row.
         val roomVoice = lead ?: Speaker(room, assistant)
@@ -103,6 +108,8 @@ object RoomFeed {
                         talk != null -> Unit_.E(entry(talk, n.seq, n.at, item))
                         n.author != null -> Unit_.E(Entry(n.seq, n.at, botSpeaker(n.author), text = ChatText.clean(n.text), source = item))
                         room.isNotEmpty() -> Unit_.E(Entry(n.seq, n.at, roomVoice, text = ChatText.clean(n.text), isStatus = true, source = item))
+                        // The assistant asking something (buttons) or saying more than a line: its own bubble, like any answer.
+                        ChatChoices.noticeIsBubble(n.text, n.choices) -> Unit_.E(Entry(n.seq, n.at, Speaker("assistant", assistant), text = ChatText.clean(n.text), source = item))
                         else -> Unit_.S(item)
                     }
                 }
@@ -122,6 +129,7 @@ object RoomFeed {
         val merged = mutableListOf<Unit_>()
         val threadRoot = HashMap<String, Int>()
         for (u in units) {
+            if (!short) { merged.add(u); continue }
             if (u is Unit_.E && u.e.thread != null) {
                 val t = u.e.thread
                 val i = threadRoot[t]
@@ -169,7 +177,7 @@ object RoomFeed {
         }
         fun flush() {
             if (run.isNotEmpty()) {
-                val need = if (runKind == 3) foldAt + 2 else foldAt
+                val need = if (!short) Int.MAX_VALUE else if (runKind == 3) foldAt + 2 else foldAt
                 if (run.size >= need) {
                     val hidden = run.dropLast(2)
                     val names = mutableListOf<String>()

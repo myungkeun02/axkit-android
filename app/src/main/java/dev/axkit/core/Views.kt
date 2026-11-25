@@ -42,6 +42,8 @@ data class BotsView(val main: Main? = null, val groups: List<Group> = emptyList(
         /** §16: how this bot works (its role prompt, ≤1500 chars) and who wrote it: `default` · `ai` · `owner`. */
         val instructions: String? = null,
         val instructionsBy: String? = null,
+        /** Which AI it runs on now, e.g. "Claude Opus · Claude Code 구독" (server d219cb3; older Macs send none). */
+        val model: String? = null,
     )
 
     @Serializable
@@ -266,8 +268,32 @@ data class HardwareView(
 @Serializable
 data class BlocksView(val title: String = "", val blocks: List<Block> = emptyList()) {
     /** §34: a row with [message] can be tapped; it sends that sentence to the chat, like an `ask` block. */
-    @Serializable data class Row(val title: String, val detail: String? = null, val trailing: String? = null, val message: String? = null) {
-        val tapMessage: String? get() = message?.trim()?.takeIf { it.isNotEmpty() }
+    @Serializable data class Row(
+        val title: String, val detail: String? = null, val trailing: String? = null, val message: String? = null,
+        /** §38: tapping re-reads the same screen as `views/<name>?<query>` (a folder); `{}` is the first screen. Wins over [message]. */
+        val query: kotlinx.serialization.json.JsonObject? = null,
+    ) {
+        /** Null when tapping sends [query] instead (or nothing is to be sent). */
+        val tapMessage: String? get() = if (query != null) null else message?.trim()?.takeIf { it.isNotEmpty() }
+        /** The query as URL parameters (strings, numbers and booleans as written; nulls left out). */
+        val tapQuery: Map<String, String>? get() = query?.let { q ->
+            q.mapNotNull { (k, v) ->
+                when (v) {
+                    is kotlinx.serialization.json.JsonNull -> null
+                    is kotlinx.serialization.json.JsonPrimitive -> k to v.content
+                    else -> k to v.toString()
+                }
+            }.toMap()
+        }
+    }
+
+    /** §38 back stack: the queries opened so far; the first screen is the empty query. */
+    data class Trail(val stack: List<Map<String, String>> = listOf(emptyMap())) {
+        val current: Map<String, String> get() = stack.last()
+        val canGoBack: Boolean get() = stack.size > 1
+        /** `{}` goes back to the first screen (not one more level). */
+        fun open(query: Map<String, String>): Trail = if (query.isEmpty()) Trail() else Trail(stack + listOf(query))
+        fun back(): Trail = if (canGoBack) Trail(stack.dropLast(1)) else this
     }
     @Serializable
     data class Block(

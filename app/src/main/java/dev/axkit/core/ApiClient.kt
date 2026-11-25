@@ -269,9 +269,11 @@ class ApiClient(val credentials: ServerCredentials, val http: OkHttpClient = def
         ProtocolJson.decodeFromJsonElement(serializer, obj["data"] ?: JsonObject(emptyMap()))
     } catch (e: Exception) { throw ApiError.Decoding }
 
-    suspend fun share(bytes: ByteArray, name: String, contentType: String): SendResult {
-        val body = send(requestBuilder("share").header("X-File-Name", URLEncoder.encode(name, "UTF-8"))
-            .post(bytes.toRequestBody(contentType.toMediaType())).build())
+    /** §37: [channel] (a team or bot room) goes as `x-channel`, so the file lands in that room (`share-rooms`). */
+    suspend fun share(bytes: ByteArray, name: String, contentType: String, channel: String? = null): SendResult {
+        val builder = requestBuilder("share").header("X-File-Name", URLEncoder.encode(name, "UTF-8"))
+        if (!channel.isNullOrEmpty()) builder.header("x-channel", channel)
+        val body = send(builder.post(bytes.toRequestBody(contentType.toMediaType())).build())
         return runCatching { ProtocolJson.decodeFromString<SendResult>(body) }.getOrElse { throw ApiError.Decoding }
     }
 
